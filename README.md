@@ -25,7 +25,7 @@ L'OCR peut se tromper : l'outil n'accepte une lecture que si **deux captures suc
 
 ## Démarrage rapide sous Windows
 
-1. **Python** : installe Python 3.12 depuis https://www.python.org/downloads/. Au premier écran de l'installateur, coche **« Add python.exe to PATH »**. Tkinter est inclus par défaut.
+1. **Python** (3.10 ou plus récent) : installe Python 3.12 depuis https://www.python.org/downloads/. Au premier écran de l'installateur, coche **« Add python.exe to PATH »**. Tkinter est inclus par défaut.
 2. **Tesseract OCR** (lecture de l'écran) : installe-le depuis https://github.com/UB-Mannheim/tesseract/wiki. Pendant l'installation, ouvre « Additional language data » et coche **French**. L'outil trouve tout seul `C:\Program Files\Tesseract-OCR\tesseract.exe`.
 3. **Récupérer le projet** :
    - avec Git (recommandé, pour les mises à jour automatiques) : dans l'Explorateur, ouvre le dossier où tu veux l'installer, tape `cmd` dans la barre d'adresse, puis lance `git clone https://github.com/BenHard1/forgemagie-dofus.git` ;
@@ -37,6 +37,7 @@ L'OCR peut se tromper : l'outil n'accepte une lecture que si **deux captures suc
 ### Lancer et mettre à jour en un double-clic
 - **`Mettre_a_jour_et_lancer.bat`** : double-clique dessus. Il récupère la dernière version (`git pull`), réinstalle les dépendances seulement si elles ont changé, puis ouvre l'outil sans fenêtre noire. La mise à jour automatique demande que le dossier ait été récupéré avec `git clone` ; avec un ZIP, l'outil se lance sans mise à jour.
 - **`Creer_raccourci_bureau.bat`** : à lancer une fois. Il crée un raccourci « Aide FM Dofus » sur le Bureau, qui fait la même chose.
+- Le lanceur cherche un Python 3.10 ou plus récent qui fonctionne vraiment (`python`, puis `py -3.x`). Il ignore donc un lanceur `py` qui pointe vers une version désinstallée.
 - En cas de plantage, l'erreur s'affiche dans une fenêtre et elle est copiée dans `fmhelper_erreur.log`.
 
 Pourquoi pas un `.exe` ? Un exécutable PyInstaller pèserait 50 à 100 Mo. Il serait souvent bloqué par les antivirus (faux positif fréquent pour ce type d'outil qui capture l'écran), et il faudrait de toute façon installer Tesseract à part. Surtout, il faudrait retélécharger un nouvel `.exe` à chaque mise à jour, alors que le `.bat` se met à jour tout seul.
