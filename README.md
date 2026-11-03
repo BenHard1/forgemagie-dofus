@@ -23,14 +23,26 @@ Les règles utilisées sont documentées dans [docs/REGLES_FORGEMAGIE.md](docs/R
 
 L'OCR peut se tromper : l'outil n'accepte une lecture que si **deux captures successives** donnent le même résultat. Le reliquat est estimé de façon prudente, et des boutons permettent de le corriger.
 
-## Installation (Windows recommandé)
+## Démarrage rapide sous Windows
 
-1. Installe **Python 3.10+** (coche « tkinter » / « tcl/tk », inclus par défaut sur Windows).
-2. Installe **Tesseract OCR** avec le pack de langue **français** : https://github.com/UB-Mannheim/tesseract/wiki (coche *French* pendant l'installation).
-3. Dans ce dossier :
+1. **Python** : installe Python 3.12 depuis https://www.python.org/downloads/. Au premier écran de l'installateur, coche **« Add python.exe to PATH »**. Tkinter est inclus par défaut.
+2. **Tesseract OCR** (lecture de l'écran) : installe-le depuis https://github.com/UB-Mannheim/tesseract/wiki. Pendant l'installation, ouvre « Additional language data » et coche **French**. L'outil trouve tout seul `C:\Program Files\Tesseract-OCR\tesseract.exe`.
+3. **Récupérer le projet**, au choix :
+   - sans Git : sur https://github.com/BenHard1/forgemagie-dofus, clique sur **Code ▸ Download ZIP** et décompresse le dossier ;
+   - avec Git : `git clone https://github.com/BenHard1/forgemagie-dofus.git`.
+4. **Installer les dépendances** : ouvre le dossier dans l'Explorateur, tape `cmd` dans la barre d'adresse et appuie sur Entrée, puis lance :
    ```
-   pip install -r requirements.txt
+   py -m pip install -r requirements.txt
    ```
+5. **Lancer l'outil** (depuis la même invite de commandes) :
+   ```
+   py -m fmhelper
+   ```
+   La fenêtre de choix de l'équipement s'ouvre.
+
+Pour mettre l'outil à jour : `git pull` dans le dossier, ou télécharge à nouveau le ZIP.
+
+Si `py` n'est pas reconnu, essaie `python` à la place. Si la lecture d'écran ne trouve pas Tesseract, indique son chemin avec `py -m fmhelper live objet.json --tesseract "C:\chemin\tesseract.exe"`.
 
 ## Utilisation
 

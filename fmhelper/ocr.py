@@ -74,11 +74,31 @@ def preprocess(img, scale: int = 2, invert: Optional[bool] = None):
     return g.point(lambda p: 255 if p > 150 else 0)
 
 
+def find_tesseract() -> Optional[str]:
+    """Cherche tesseract : PATH, puis emplacements d'installation Windows habituels."""
+    import os
+    import shutil
+
+    p = shutil.which("tesseract")
+    if p:
+        return p
+    for base in (os.environ.get("ProgramFiles", r"C:\Program Files"), os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+                 os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs")):
+        cand = os.path.join(base, "Tesseract-OCR", "tesseract.exe")
+        if base and os.path.exists(cand):
+            return cand
+    return None
+
+
 def read_region(bbox, lang: str = "fra", tesseract_cmd: Optional[str] = None) -> Dict[str, int]:
     import pytesseract
 
     if tesseract_cmd:
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+    else:
+        found = find_tesseract()
+        if found:
+            pytesseract.pytesseract.tesseract_cmd = found
     img = preprocess(grab(bbox))
     text = pytesseract.image_to_string(img, lang=lang, config="--psm 6")
     return values_dict(parse_lines(text))
