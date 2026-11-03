@@ -1,0 +1,11 @@
+{
+  "name": "Anneau d'exemple (exo PM visé)",
+  "level": 180,
+  "lines": [
+    {"stat": "vitalite", "min": 151, "max": 200, "current": 170},
+    {"stat": "intelligence", "min": 41, "max": 60, "current": 45},
+    {"stat": "do_feu", "min": 6, "max": 10, "current": 7},
+    {"stat": "sagesse", "min": -10, "max": -5, "current": -9}
+  ],
+  "exos": {"pm": 1}
+}
