@@ -27,20 +27,19 @@ L'OCR peut se tromper : l'outil n'accepte une lecture que si **deux captures suc
 
 1. **Python** : installe Python 3.12 depuis https://www.python.org/downloads/. Au premier écran de l'installateur, coche **« Add python.exe to PATH »**. Tkinter est inclus par défaut.
 2. **Tesseract OCR** (lecture de l'écran) : installe-le depuis https://github.com/UB-Mannheim/tesseract/wiki. Pendant l'installation, ouvre « Additional language data » et coche **French**. L'outil trouve tout seul `C:\Program Files\Tesseract-OCR\tesseract.exe`.
-3. **Récupérer le projet**, au choix :
-   - sans Git : sur https://github.com/BenHard1/forgemagie-dofus, clique sur **Code ▸ Download ZIP** et décompresse le dossier ;
-   - avec Git : `git clone https://github.com/BenHard1/forgemagie-dofus.git`.
-4. **Installer les dépendances** : ouvre le dossier dans l'Explorateur, tape `cmd` dans la barre d'adresse et appuie sur Entrée, puis lance :
-   ```
-   py -m pip install -r requirements.txt
-   ```
-5. **Lancer l'outil** (depuis la même invite de commandes) :
-   ```
-   py -m fmhelper
-   ```
-   La fenêtre de choix de l'équipement s'ouvre.
+3. **Récupérer le projet** :
+   - avec Git (recommandé, pour les mises à jour automatiques) : dans l'Explorateur, ouvre le dossier où tu veux l'installer, tape `cmd` dans la barre d'adresse, puis lance `git clone https://github.com/BenHard1/forgemagie-dofus.git` ;
+   - sans Git : sur https://github.com/BenHard1/forgemagie-dofus, clique sur **Code ▸ Download ZIP** et décompresse le dossier (pas de mise à jour automatique).
+4. **Lancer l'outil** : double-clique sur **`Mettre_a_jour_et_lancer.bat`**. Au premier lancement, il installe les dépendances, puis la fenêtre de choix de l'équipement s'ouvre. Pour avoir un raccourci sur le Bureau, double-clique une fois sur `Creer_raccourci_bureau.bat`.
 
-Pour mettre l'outil à jour : `git pull` dans le dossier, ou télécharge à nouveau le ZIP.
+   Pour lancer à la main depuis une invite de commandes : `py -m pip install -r requirements.txt`, puis `py -m fmhelper`.
+
+### Lancer et mettre à jour en un double-clic
+- **`Mettre_a_jour_et_lancer.bat`** : double-clique dessus. Il récupère la dernière version (`git pull`), réinstalle les dépendances seulement si elles ont changé, puis ouvre l'outil sans fenêtre noire. La mise à jour automatique demande que le dossier ait été récupéré avec `git clone` ; avec un ZIP, l'outil se lance sans mise à jour.
+- **`Creer_raccourci_bureau.bat`** : à lancer une fois. Il crée un raccourci « Aide FM Dofus » sur le Bureau, qui fait la même chose.
+- En cas de plantage, l'erreur s'affiche dans une fenêtre et elle est copiée dans `fmhelper_erreur.log`.
+
+Pourquoi pas un `.exe` ? Un exécutable PyInstaller pèserait 50 à 100 Mo. Il serait souvent bloqué par les antivirus (faux positif fréquent pour ce type d'outil qui capture l'écran), et il faudrait de toute façon installer Tesseract à part. Surtout, il faudrait retélécharger un nouvel `.exe` à chaque mise à jour, alors que le `.bat` se met à jour tout seul.
 
 Si `py` n'est pas reconnu, essaie `python` à la place. Si la lecture d'écran ne trouve pas Tesseract, indique son chemin avec `py -m fmhelper live objet.json --tesseract "C:\chemin\tesseract.exe"`.
 

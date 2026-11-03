@@ -3,3 +3,4 @@ __pycache__/
 .pytest_cache/
 calibration.json
 historique_fm.csv
+.requirements.installed

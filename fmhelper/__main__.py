@@ -171,5 +171,33 @@ def main(argv=None):
     a.func(a)
 
 
+def _main_with_error_report():
+    """Lancé sans console (pyw) : une erreur est écrite dans fmhelper_erreur.log et affichée."""
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception:
+        import traceback
+
+        msg = traceback.format_exc()
+        try:
+            with open("fmhelper_erreur.log", "w", encoding="utf-8") as f:
+                f.write(msg)
+        except OSError:
+            pass
+        if sys.stderr is None or not sys.stderr.isatty():
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+
+                r = tk.Tk()
+                r.withdraw()
+                messagebox.showerror("Aide FM — erreur", msg[-1500:] + "\n\n(copie dans fmhelper_erreur.log)")
+            except Exception:
+                pass
+        raise
+
+
 if __name__ == "__main__":
-    main()
+    _main_with_error_report()
