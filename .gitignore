@@ -4,3 +4,5 @@ __pycache__/
 calibration.json
 historique_fm.csv
 .requirements.installed
+fmhelper_erreur.log
+fmhelper_ocr_derniere_lecture.txt

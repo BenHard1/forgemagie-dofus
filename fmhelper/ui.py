@@ -276,6 +276,10 @@ class Overlay:
             GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_TRANSPARENT = -20, 0x80000, 0x20
             style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
+            # Exclut l'overlay des captures d'écran (Windows 10 2004+) : l'OCR ne lit
+            # jamais nos propres textes (SC 47 %...) par-dessus la fenêtre de FM.
+            WDA_EXCLUDEFROMCAPTURE = 0x11
+            ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
         except Exception:
             pass
 
@@ -348,6 +352,7 @@ class LiveApp:
         self.last_outcome = None
         self.alerts: List[str] = []
         self.go_back = False
+        self.synced = False
 
         self.root = tk.Tk()
         self.root.title("Aide FM — lecture seule")
@@ -360,6 +365,7 @@ class LiveApp:
         self.v_last = tk.StringVar()
         self.v_chances = tk.StringVar()
         self.v_alert = tk.StringVar()
+        self.v_read = tk.StringVar(value="En attente de la première lecture de l'écran…")
         tk.Label(self.root, text=item.name, font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=8, pady=(6, 0))
         self.alert_frame = tk.Frame(self.root, bg=ALERT_COLOR)
         tk.Label(self.alert_frame, textvariable=self.v_alert, bg=ALERT_COLOR, fg="white", font=("Segoe UI", 11, "bold"),
@@ -373,6 +379,7 @@ class LiveApp:
                  fg="#888", font=("Segoe UI", 8)).pack(anchor="w", padx=8)
         tk.Label(self.root, textvariable=self.v_state, font=("Consolas", 10), justify="left").pack(anchor="w", padx=8)
         tk.Label(self.root, textvariable=self.v_last, fg="#555", wraplength=380, justify="left").pack(anchor="w", padx=8)
+        tk.Label(self.root, textvariable=self.v_read, fg="#888", font=("Segoe UI", 8)).pack(anchor="w", padx=8)
         bar = tk.Frame(self.root)
         bar.pack(fill="x", padx=8, pady=6)
         tk.Button(bar, text="Pause", command=self.toggle).pack(side="left")
@@ -380,6 +387,7 @@ class LiveApp:
         tk.Button(bar, text="+1", command=lambda: self.adj(1)).pack(side="left")
         tk.Button(bar, text="=0", command=lambda: self.adj(None)).pack(side="left")
         tk.Button(bar, text="Liste d'achats", command=self.show_shopping).pack(side="left")
+        tk.Button(bar, text="Resynchroniser", command=lambda: self.resync()).pack(side="left")
         tk.Button(bar, text="⟵ Changer d'objet", command=self.back).pack(side="right")
         self.refresh()
 
@@ -428,39 +436,98 @@ class LiveApp:
 
     # -- boucle --
     def tick(self):
-        if not self.paused:
-            try:
-                from . import ocr
+        """Relit l'écran, met à jour l'état et la recommandation.
 
-                vals = ocr.read_region(self.cal.stats_bbox, lang=self.lang, tesseract_cmd=self.tess)
-                if ocr.LANG_NOTE:
-                    self.v_last.set(ocr.LANG_NOTE)
-                    ocr.LANG_NOTE = ""
-            except Exception as e:  # OCR indisponible : on continue sans planter
-                msg = str(e)
-                if "traineddata" in msg or "Failed loading language" in msg:
-                    msg = ("langue française de Tesseract absente. Réinstalle Tesseract en cochant "
-                           "« French » (Additional language data), ou vérifie ta connexion pour le téléchargement automatique.")
-                self.v_last.set(f"Lecture écran impossible : {msg}")
-                vals = None
-            if vals:
-                known = [k for k in vals if self.session.item.line(k)]
-                stable = vals == self.last_read
-                self.last_read = vals
-                if stable and len(known) >= max(1, len(self.session.item.lines) // 2):
-                    self.row_order = list(vals.keys())
-                    rune = self.rec.rune if self.rec else None
-                    before = self.session.item.values()
-                    obs = self.session.observe(vals, rune=rune)
-                    if obs:
-                        self.log(obs)
-                        self.last_outcome = obs.outcome
-                        self.v_last.set(f"Dernier coup : {obs.outcome} {obs.rune.name if obs.rune else ''} — reliquat {obs.reliquat_after:g}. {obs.note}")
-                    self.refresh()
-                    if obs:
-                        self.raise_alerts(detect_alerts(before, self.session, obs, target_reached=self.rec is None))
-                        self.refresh()
-        self.root.after(self.interval, self.tick)
+        Se replanifie toujours (finally) : une erreur ponctuelle ne doit jamais
+        arrêter le suivi. Les erreurs sont affichées et écrites dans fmhelper_erreur.log.
+        """
+        try:
+            if not self.paused:
+                self._read_and_update()
+        except Exception as e:
+            import traceback
+
+            self.v_last.set(f"Erreur pendant le suivi (le suivi continue) : {e}")
+            try:
+                with open("fmhelper_erreur.log", "a", encoding="utf-8") as f:
+                    f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + traceback.format_exc() + "\n")
+            except OSError:
+                pass
+        finally:
+            self.root.after(self.interval, self.tick)
+
+    def _read(self) -> Optional[Dict[str, int]]:
+        from . import ocr
+
+        try:
+            vals = ocr.read_region(self.cal.stats_bbox, lang=self.lang, tesseract_cmd=self.tess)
+        except Exception as e:  # OCR indisponible : on continue sans planter
+            msg = str(e)
+            if "traineddata" in msg or "Failed loading language" in msg:
+                msg = ("langue française de Tesseract absente. Réinstalle Tesseract en cochant "
+                       "« French » (Additional language data), ou vérifie ta connexion pour le téléchargement automatique.")
+            self.v_last.set(f"Lecture écran impossible : {msg}")
+            return None
+        if ocr.LANG_NOTE:
+            self.v_last.set(ocr.LANG_NOTE)
+            ocr.LANG_NOTE = ""
+        try:
+            with open("fmhelper_ocr_derniere_lecture.txt", "w", encoding="utf-8") as f:
+                f.write(ocr.LAST_TEXT)
+        except OSError:
+            pass
+        # On ne garde que les lignes de l'objet (le bruit d'OCR ne crée pas de fausses lignes)
+        known = {k: v for k, v in vals.items() if self.session.item.line(k)}
+        self.v_read.set(f"Lecture {time.strftime('%H:%M:%S')} : {len(known)}/{len(self.session.item.lines)} lignes reconnues")
+        return known
+
+    def _read_and_update(self):
+        vals = self._read()
+        if not vals:
+            return
+        stable = vals == self.last_read
+        self.last_read = vals
+        if not stable or len(vals) < max(1, len(self.session.item.lines) // 2):
+            return
+        self.row_order = [k for k in (self.ocr_order() or vals.keys())]
+        if not self.synced:
+            self.resync(vals)
+            return
+        rune = self.rec.rune if self.rec else None
+        before = self.session.item.values()
+        obs = self.session.observe(vals, rune=rune)
+        if obs is None:
+            return
+        self.log(obs)
+        self.last_outcome = obs.outcome
+        self.v_last.set(f"Dernier coup : {obs.outcome} {obs.rune.name if obs.rune else ''} — reliquat {obs.reliquat_after:g}. {obs.note}")
+        self.refresh()
+        self.raise_alerts(detect_alerts(before, self.session, obs, target_reached=self.rec is None))
+        self.refresh()
+
+    def ocr_order(self) -> List[str]:
+        """Ordre des lignes à l'écran, d'après le dernier texte lu."""
+        from . import ocr
+
+        order = []
+        for k, _v in ocr.parse_lines(ocr.LAST_TEXT):
+            if self.session.item.line(k) and k not in order:
+                order.append(k)
+        return order
+
+    def resync(self, vals: Optional[Dict[str, int]] = None):
+        """Prend les valeurs lues comme état de départ, sans compter de coup."""
+        if vals is None:
+            vals = self._read() or {}
+        for k, v in vals.items():
+            l = self.session.item.line(k)
+            if l is not None:
+                l.current = v
+        self.synced = bool(vals)
+        if vals:
+            self.last_read = vals
+            self.v_last.set("Jet synchronisé avec l'écran. Tu peux cliquer sur la rune entourée.")
+        self.refresh()
 
     def refresh(self):
         s = self.session

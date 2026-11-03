@@ -200,3 +200,9 @@ def test_resolve_lang_fallbacks(monkeypatch, tmp_path):
     monkeypatch.setattr(ocr, "_LANG_CACHE", {})
     monkeypatch.setattr(pytesseract, "get_languages", lambda config="": ["eng", "fra"])
     assert ocr.resolve_lang("fra") == ("fra", "")
+
+
+def test_parse_lines_with_trailing_noise():
+    txt = "312 Vitalité SC 47% 12\n64 Force Pa Ra\n8% Résistance Feu 3 2 1"
+    d = values_dict(parse_lines(txt))
+    assert d == {"vitalite": 312, "force": 64, "re_pct_feu": 8}

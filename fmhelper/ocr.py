@@ -33,6 +33,14 @@ def parse_lines(text: str) -> List[Tuple[str, int]]:
             label = "% " + label
         key = match_stat(label)
         if key is None:
+            # Texte parasite après le nom de la stat (colonnes, quantités de runes…) :
+            # on raccourcit le libellé par la fin jusqu'à reconnaître une stat.
+            words = label.split()
+            for n in range(len(words) - 1, 0, -1):
+                key = match_stat(" ".join(words[:n]), cutoff=0.85)
+                if key:
+                    break
+        if key is None:
             continue
         val = int(num)
         if sign in ("-", "−", "–"):
@@ -189,4 +197,9 @@ def read_region(bbox, lang: str = "fra", tesseract_cmd: Optional[str] = None) ->
     use_lang, extra = resolve_lang(lang)
     img = preprocess(grab(bbox))
     text = pytesseract.image_to_string(img, lang=use_lang, config=f"--psm 6 {extra}".strip())
+    global LAST_TEXT
+    LAST_TEXT = text
     return values_dict(parse_lines(text))
+
+
+LAST_TEXT = ""  # dernier texte brut lu (diagnostic)
