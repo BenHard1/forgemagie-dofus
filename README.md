@@ -97,8 +97,10 @@ Une capture plein écran s'affiche. Suis les 5 étapes : encadre les lignes de s
 ```
 python -m fmhelper live mon_objet.json --reliquat 0
 ```
-- Un **cadre vert** entoure la rune à cliquer, et le panneau affiche la rune, les chances estimées SC/SN/EC et le reliquat.
-- Après chaque clic, l'outil relit l'écran, détecte l'issue (SC, SN ou EC), met à jour le reliquat et déplace le cadre.
+- Un **cadre** entoure la rune à cliquer. Sa couleur reprend l'issue du dernier coup : **vert** pour un SC (ou au départ), **jaune** pour un SN, **rouge** pour un EC.
+- **Chances de chaque clic** : à côté du cadre s'affichent les SC/SN/EC de la rune conseillée, et sous les autres cases (Pa, Ra...) leur SC. Le panneau donne le détail des trois rangs pour la ligne en cours, avec « (over) » quand une rune dépasse le jet max. Tout est recalculé à chaque lecture de l'écran avec la formule DoFocus : ce sont des **estimations**.
+- **Alertes** (bandeau rouge dans le panneau et au-dessus de la fenêtre de FM) : cible atteinte, PA/PM/PO naturel qui vient de sauter, reliquat qui tombe à 0. Clique sur **OK** pour les effacer.
+- Après chaque clic, l'outil relit l'écran, détecte l'issue (SC, SN ou EC), met à jour le reliquat et déplace le cadre. L'outil ne clique jamais à ta place.
 - Les boutons **Reliquat −1 / +1 / =0** servent à corriger l'estimation (par exemple si le jeu affiche « −reliquat » alors que l'outil a supposé un SC).
 - Chaque coup est enregistré dans `historique_fm.csv`. Cet historique servira à recalibrer les chances sur tes vraies données.
 - Pour un **exo**, la ligne n'existe pas encore à l'écran : le panneau te dit quelle rune glisser dans la case de rune.

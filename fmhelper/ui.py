@@ -14,6 +14,7 @@ from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Tuple
 
 from .model import ForgeSession, Item
+from .alerts import ALERT_COLOR, OUTCOME_COLORS, detect_alerts, tier_chances
 from .planner import recommend, shopping_list
 
 TIER_COL = {"base": 0, "pa": 1, "ra": 2}
@@ -203,22 +204,42 @@ class Overlay:
         except Exception:
             pass
 
-    def show(self, x: int, y: int, r: int, color: str = "#00e676", label: str = ""):
+    def show(self, x: int, y: int, r: int, color: str = "#00e676", label: str = "",
+             extras: Optional[List[Tuple[int, int, str]]] = None, alert: str = ""):
+        """Cadre sur la rune à cliquer, texte à côté, petites étiquettes sur les autres cases
+        (Windows) et bandeau d'alerte."""
         if self.full:
             self.cv.delete("all")
-            self.cv.create_oval(x - r, y - r, x + r, y + r, outline=color, width=4)
+            self.cv.create_oval(x - r, y - r, x + r, y + r, outline=color, width=5)
             if label:
                 self.cv.create_text(x + r + 8, y, text=label, fill=color, anchor="w", font=("Segoe UI", 11, "bold"))
+            for ex, ey, txt in extras or []:
+                self.cv.create_text(ex, ey + r + 2, text=txt, fill="#ffffff", anchor="n", font=("Segoe UI", 8))
+            if alert:
+                self._banner(x, y - 3 * r, alert)
             self.win.lift()
             return
-        t = 4
+        t = 5
         rects = [(x - r, y - r, 2 * r, t), (x - r, y + r - t, 2 * r, t), (x - r, y - r, t, 2 * r), (x + r - t, y - r, t, 2 * r)]
         for b, (bx, by, w, h) in zip(self.bars, rects):
+            b.configure(bg=color)
             b.withdraw()  # certains gestionnaires de fenêtres ignorent un déplacement de fenêtre visible
             b.geometry(f"{w}x{h}+{bx}+{by}")
             b.deiconify()
             b.lift()
         self.bars[0].update_idletasks()
+
+    def _banner(self, x: int, y: int, text: str):
+        tid = self.cv.create_text(x, max(y, 20), text=text, fill="#ffffff", anchor="s", font=("Segoe UI", 13, "bold"), width=500)
+        x0, y0, x1, y1 = self.cv.bbox(tid)
+        rid = self.cv.create_rectangle(x0 - 8, y0 - 6, x1 + 8, y1 + 6, fill="#ff1744", outline="")
+        self.cv.tag_lower(rid, tid)
+
+    def alert_only(self, x: int, y: int, text: str):
+        if self.full:
+            self.cv.delete("all")
+            self._banner(x, y, text)
+            self.win.lift()
 
     def hide(self):
         if self.full:
@@ -249,6 +270,8 @@ class LiveApp:
         self.last_read: Optional[Dict[str, int]] = None
         self.row_order: List[str] = [l.stat for l in item.lines]
         self.rec = None
+        self.last_outcome = None
+        self.alerts: List[str] = []
 
         self.root = tk.Tk()
         self.root.title("Aide FM — lecture seule")
@@ -259,8 +282,18 @@ class LiveApp:
         self.v_rec = tk.StringVar()
         self.v_state = tk.StringVar()
         self.v_last = tk.StringVar()
+        self.v_chances = tk.StringVar()
+        self.v_alert = tk.StringVar()
         tk.Label(self.root, text=item.name, font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=8, pady=(6, 0))
-        tk.Label(self.root, textvariable=self.v_rec, fg="#0a7d32", font=("Segoe UI", 11, "bold"), wraplength=380, justify="left").pack(anchor="w", padx=8)
+        self.alert_frame = tk.Frame(self.root, bg=ALERT_COLOR)
+        tk.Label(self.alert_frame, textvariable=self.v_alert, bg=ALERT_COLOR, fg="white", font=("Segoe UI", 11, "bold"),
+                 wraplength=330, justify="left").pack(side="left", padx=6, pady=4)
+        tk.Button(self.alert_frame, text="OK", command=self.clear_alerts).pack(side="right", padx=6)
+        self.anchor = tk.Label(self.root, textvariable=self.v_rec, fg="#0a7d32", font=("Segoe UI", 11, "bold"), wraplength=380, justify="left")
+        self.anchor.pack(anchor="w", padx=8)
+        tk.Label(self.root, textvariable=self.v_chances, font=("Consolas", 10), justify="left").pack(anchor="w", padx=8)
+        tk.Label(self.root, text="Chances estimées avec la formule DoFocus (approximation, pas la formule officielle).",
+                 fg="#888", font=("Segoe UI", 8)).pack(anchor="w", padx=8)
         tk.Label(self.root, textvariable=self.v_state, font=("Consolas", 10), justify="left").pack(anchor="w", padx=8)
         tk.Label(self.root, textvariable=self.v_last, fg="#555", wraplength=380, justify="left").pack(anchor="w", padx=8)
         bar = tk.Frame(self.root)
@@ -277,6 +310,18 @@ class LiveApp:
         self.paused = not self.paused
         if self.paused:
             self.overlay.hide()
+
+    def clear_alerts(self):
+        self.alerts = []
+        self.alert_frame.pack_forget()
+        self.refresh()
+
+    def raise_alerts(self, alerts: List[str]):
+        if not alerts:
+            return
+        self.alerts = alerts
+        self.v_alert.set("⚠ " + "\n⚠ ".join(alerts))
+        self.alert_frame.pack(fill="x", padx=8, pady=4, before=self.anchor)
 
     def adj(self, d):
         self.session.reliquat = 0.0 if d is None else max(0.0, self.session.reliquat + d)
@@ -311,11 +356,16 @@ class LiveApp:
                 if stable and len(known) >= max(1, len(self.session.item.lines) // 2):
                     self.row_order = list(vals.keys())
                     rune = self.rec.rune if self.rec else None
+                    before = self.session.item.values()
                     obs = self.session.observe(vals, rune=rune)
                     if obs:
                         self.log(obs)
+                        self.last_outcome = obs.outcome
                         self.v_last.set(f"Dernier coup : {obs.outcome} {obs.rune.name if obs.rune else ''} — reliquat {obs.reliquat_after:g}. {obs.note}")
                     self.refresh()
+                    if obs:
+                        self.raise_alerts(detect_alerts(before, self.session, obs, target_reached=self.rec is None))
+                        self.refresh()
         self.root.after(self.interval, self.tick)
 
     def refresh(self):
@@ -323,20 +373,40 @@ class LiveApp:
         self.rec = recommend(s)
         lines = [f"{l.info.label[:22]:22} {l.current:>5} / {l.target:<5}" for l in s.item.lines]
         self.v_state.set("\n".join(lines) + f"\nReliquat estimé : {s.reliquat:g}")
+        alert = " · ".join(self.alerts)
+        bx, by = self.cal.stats_bbox[0] + self.cal.stats_bbox[2] // 2, self.cal.stats_bbox[1]
         if self.rec is None:
             self.v_rec.set("Objet terminé selon tes cibles 🎉")
+            self.v_chances.set("")
             self.overlay.hide()
+            if alert and not self.paused:
+                self.overlay.alert_only(bx, by, alert)
             return
         self.v_rec.set(f"➜ {self.rec}")
+        line = self.rec.line
+        tiers = tier_chances(s.item, line)
+        self.v_chances.set("\n".join(
+            f"{'➜' if r.tier == self.rec.rune.tier else ' '} {r.name:20} SC {c.sc:4.0%}  SN {c.sn:4.0%}  EC {c.ec:4.0%}"
+            + ("  (over)" if line.current + r.power > max(line.max, 0) else "")
+            for r, c in tiers))
         if self.paused:
             return
-        stat = self.rec.line.stat
-        if stat in self.row_order and not self.rec.line.exo:
-            row = self.row_order.index(stat)
+        if line.stat in self.row_order and not line.exo:
+            row = self.row_order.index(line.stat)
             x, y = self.cal.cell(row, self.rec.rune.tier)
-            self.overlay.show(x, y, self.cal.radius, label=self.rec.rune.name)
+            ch = self.rec.chances
+            label = f"{self.rec.rune.name}  SC {ch.sc:.0%} · SN {ch.sn:.0%} · EC {ch.ec:.0%}"
+            extras = []
+            for r, c in tiers:
+                if r.tier != self.rec.rune.tier:
+                    ex, ey = self.cal.cell(row, r.tier)
+                    extras.append((ex, ey, f"SC {c.sc:.0%}"))
+            self.overlay.show(x, y, self.cal.radius, color=OUTCOME_COLORS.get(self.last_outcome, "#00e676"),
+                              label=label, extras=extras, alert=alert)
         else:
             self.overlay.hide()
+            if alert:
+                self.overlay.alert_only(bx, by, alert)
             self.v_rec.set(self.v_rec.get() + "\n(Exo : glisse la rune depuis l'inventaire dans la case de rune.)")
 
     def log(self, obs):
