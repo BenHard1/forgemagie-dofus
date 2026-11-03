@@ -173,8 +173,10 @@ def _apply_loss(session: ForgeSession, rune: Rune, protect: Line, rng: random.Ra
         overs = heavy
     pool = overs or light or cands
     # Les lignes dont le poids par rune de base est proche de la rune sont visées en priorité
-    pool.sort(key=lambda l: (abs(l.wpp - rune.weight), rng.random()))
-    target = pool[0]
+    # Tirage pondéré : plus une ligne a un poids par point proche de la rune,
+    # plus elle a de chances d'être touchée (la règle exacte n'est pas connue).
+    weights = [1.0 / (1.0 + abs(l.wpp - rune.weight)) for l in pool]
+    target = rng.choices(pool, weights=weights, k=1)[0]
     pts = max(1, int(round(need / target.wpp)))
     pts = min(pts, target.current)
     target.current -= pts

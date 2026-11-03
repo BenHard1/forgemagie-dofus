@@ -34,7 +34,18 @@ L'OCR peut se tromper : l'outil n'accepte une lecture que si **deux captures suc
 
 ## Utilisation
 
-### 1. Décrire l'objet
+### Le plus simple : la fenêtre de lancement
+```
+python -m fmhelper
+```
+1. Tape le nom de l'équipement (ex. « coiffe du bouftou ») et appuie sur Entrée. La liste vient de l'**API DofusDB**, avec le jet min/max de chaque ligne et le niveau.
+2. Clique sur l'objet. Renseigne ton **jet actuel**, ou clique sur **Lire l'objet à l'écran** si la calibration est faite. Indique ensuite la **cible acceptable** de chaque ligne. Tu peux supprimer une ligne (✕) ou ajouter un exo.
+3. **Calculer les runes** affiche la liste de runes à acheter (min / conseillé / prudent), la part des FM simulées qui atteignent tes cibles et l'ordre de clics.
+4. **Lancer la FM en direct ▶** ouvre le mode live (avec la calibration au premier lancement).
+
+Les objets et recherches déjà consultés sont gardés en cache dans `~/.cache/fmhelper` : ils restent disponibles si DofusDB ne répond pas. Pour créer un JSON depuis DofusDB en ligne de commande : `python -m fmhelper item "coiffe du bouftou"`.
+
+### 1. Décrire l'objet à la main (optionnel)
 Crée un fichier JSON (voir `exemples/`). `min` et `max` correspondent au jet théorique, `current` à la valeur actuelle et `target` à la cible (par défaut le max). Les exos voulus vont dans `exos`.
 
 ```json
@@ -83,11 +94,12 @@ python -m fmhelper live mon_objet.json --reliquat 0
 - **Les chances viennent de la formule de difficulté reconstituée par DoFocus** (225 896 clics analysés, voir `docs/REGLES_FORGEMAGIE.md`). Ankama ne l'a pas publiée : c'est une approximation. Deux points restent incertains, la courbe exacte de la qualité globale de l'objet et la part de SN dans les cas extrêmes. Tous les coefficients sont réglables dans `PARAMS` (`fmhelper/probability.py`).
 - Un SC et un SN absorbé par le reliquat donnent le même résultat à l'écran. L'outil suppose un SN (estimation prudente) : corrige avec les boutons si le jeu affichait un SC.
 - La calibration suppose que les cases Rune / Pa / Ra sont alignées en grille à côté des lignes, comme dans l'interface de FM actuelle. Recalibre si tu changes la taille de la fenêtre.
-- Testé sous Linux avec une fausse fenêtre de FM (OCR + cadre). Sous Windows, le mode plein écran transparent avec cercle vert n'a pas encore été testé en jeu.
+- Testé sous Linux avec une fausse fenêtre de FM (OCR + cadre) et une fausse réponse DofusDB. Sous Windows, le mode plein écran transparent avec cercle vert n'a pas encore été testé en jeu.
+- DofusDB est un site communautaire, non affilié à Ankama : si son API change, la recherche peut casser (le cache et les fichiers JSON restent utilisables).
 
 ## Développement
 ```
 pip install pytest
 python -m pytest -q
 ```
-Structure : `runes.py` (base de runes), `model.py` (objet et reliquat), `probability.py` (chances), `planner.py` (choix de rune, plan, simulation), `ocr.py` (capture + Tesseract), `ui.py` (calibration, cadre, panneau), `__main__.py` (commandes).
+Structure : `launcher.py` (fenêtre de lancement), `dofusdb.py` (API DofusDB + cache), `runes.py` (base de runes), `model.py` (objet et reliquat), `probability.py` (chances), `planner.py` (choix de rune, plan, simulation), `ocr.py` (capture + Tesseract), `ui.py` (calibration, cadre, panneau), `__main__.py` (commandes).

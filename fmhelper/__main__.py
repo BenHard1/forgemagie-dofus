@@ -1,6 +1,10 @@
 """Point d'entrée : python -m fmhelper <commande>.
 
+Sans commande : ouvre la fenêtre de choix de l'équipement (recherche DofusDB,
+stats visées, liste des runes, puis FM en direct).
+
 Commandes :
+  gui                   même chose que sans commande
   plan ITEM.json        ordre de clics théorique + liste d'achats estimée
   calibrate             repère la fenêtre de FM à l'écran (une fois par résolution)
   live ITEM.json        lit l'écran en continu et entoure en vert la rune à cliquer
@@ -85,6 +89,33 @@ def cmd_live(a):
     LiveApp(item, cal, reliquat=a.reliquat, interval_ms=a.interval, tesseract_cmd=a.tesseract, lang=a.lang).run()
 
 
+def cmd_gui(a):
+    from .launcher import main as launcher_main
+
+    launcher_main(a.calibration)
+
+
+def cmd_item(a):
+    import json
+
+    from .dofusdb import load_item, search_items
+
+    res = search_items(a.recherche)
+    if not res:
+        sys.exit("Aucun équipement trouvé.")
+    for i, r in enumerate(res[:15], 1):
+        print(f"  {i:>2}. {r['name']} — niv. {r['level']} ({r['type']})")
+    pick = res[0]
+    if len(res) > 1 and sys.stdin.isatty():
+        n = input("Numéro de l'objet [1] : ").strip()
+        pick = res[int(n) - 1] if n else res[0]
+    item = load_item(pick["id"])
+    out = a.out or f"{pick['name']}.json"
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(item.to_dict(), f, ensure_ascii=False, indent=2)
+    print("Objet enregistré dans", out, "— modifie current / target puis lance : python -m fmhelper plan", repr(out))
+
+
 def cmd_stats(a):
     for k, s in STATS.items():
         powers = "/".join(str(p) for p in s.powers)
@@ -93,7 +124,16 @@ def cmd_stats(a):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="fmhelper", description="Aide à la décision pour la forgemagie Dofus (lecture seule).")
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(dest="cmd")
+
+    sg = sub.add_parser("gui", help="fenêtre de choix de l'équipement (par défaut)")
+    sg.add_argument("--calibration", default="calibration.json")
+    sg.set_defaults(func=cmd_gui)
+
+    sd = sub.add_parser("item", help="crée un JSON d'objet depuis DofusDB")
+    sd.add_argument("recherche")
+    sd.add_argument("--out")
+    sd.set_defaults(func=cmd_item)
 
     sp = sub.add_parser("plan", help="ordre de clics et liste d'achats")
     sp.add_argument("item")
@@ -121,6 +161,8 @@ def main(argv=None):
     ss.set_defaults(func=cmd_stats)
 
     a = p.parse_args(argv)
+    if a.cmd is None:
+        a = p.parse_args(["gui"])
     a.func(a)
 
 
