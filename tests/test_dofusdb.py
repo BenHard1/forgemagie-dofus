@@ -61,3 +61,19 @@ def test_non_equipment_filtered(monkeypatch):
     rune = dict(BOUFTOU, id=1, name={"fr": "Rune Fo"}, type={"superTypeId": 9, "superType": {"id": 9}, "name": {"fr": "Rune"}})
     monkeypatch.setattr(dofusdb, "_get", lambda *a, **k: {"data": [rune, BOUFTOU]})
     assert [r["id"] for r in dofusdb.search_items("bouftou")] == [2411]
+
+
+def test_negative_values_from_dofusdb_stay_negative():
+    # Format réel DofusDB (objet 66) : malus déjà négatifs, to = 0 pour une valeur fixe
+    raw = dict(BOUFTOU, effects=[
+        {"from": -12, "to": 0, "characteristic": 79, "effectId": 755},  # -12 Tacle
+        {"from": -12, "to": 0, "characteristic": 78, "effectId": 754},  # -12 Fuite
+        {"from": -100, "to": 0, "characteristic": 44, "effectId": 175},  # -100 Initiative
+        {"from": -15, "to": -10, "characteristic": 12, "effectId": 156},  # jet négatif
+    ])
+    item = dofusdb.item_from_raw(raw, malus={754, 755, 175, 156})
+    t = item.line("tacle")
+    assert (t.min, t.max, t.current, t.target) == (-12, -12, -12, -12)
+    assert (item.line("fuite").min, item.line("initiative").max) == (-12, -100)
+    s = item.line("sagesse")
+    assert (s.min, s.max) == (-15, -10) and s.is_malus

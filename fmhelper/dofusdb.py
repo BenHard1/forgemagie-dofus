@@ -49,7 +49,7 @@ CHARACTERISTIC_TO_STAT = {
 # Effets « malus » connus (repli si l'API /effects est injoignable)
 KNOWN_MALUS_EFFECTS = {
     116, 145, 152, 153, 154, 155, 156, 157, 159, 162, 163, 168, 169, 171, 175,
-    177, 179, 186, 215, 216, 217, 218, 219, 245, 246, 247, 248, 249,
+    177, 179, 186, 215, 216, 217, 218, 219, 245, 246, 247, 248, 249, 754, 755,
 }
 
 
@@ -202,10 +202,12 @@ def item_from_raw(raw: dict, malus: Optional[set] = None) -> Item:
         if stat is None or stat in lines:
             continue  # dégâts d'arme, effets spéciaux, doublons
         lo, hi = int(e.get("from") or 0), int(e.get("to") or 0)
-        if hi == 0:
+        if hi == 0:  # valeur fixe : DofusDB met to = 0
             hi = lo
         lo, hi = min(lo, hi), max(lo, hi)
-        if e.get("effectId") in malus:
+        # DofusDB donne déjà les malus en négatif (from = -12) ; on ne les inverse
+        # que s'ils arrivent en positif avec un effet de type malus.
+        if e.get("effectId") in malus and lo > 0:
             lo, hi = -hi, -lo
         lines[stat] = Line(stat=stat, min=lo, max=hi, current=lo)
     name = (raw.get("name") or {}).get("fr", "Objet")
