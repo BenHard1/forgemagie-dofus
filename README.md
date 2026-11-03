@@ -87,11 +87,16 @@ La commande affiche l'ordre de clics conseillé (en supposant que tout passe), p
 Les exos ou overs lourds (PA, PM, PO, Invo) ne sont planifiés que si le reliquat les couvre. Pour les planifier quand même, ajoute `--forcer-exo`.
 
 ### 3. Calibrer (une fois par résolution / position de fenêtre)
-Ouvre la fenêtre de FM en jeu avec ton objet, puis lance :
-```
-python -m fmhelper calibrate
-```
-Une capture plein écran s'affiche. Suis les 5 étapes : encadre les lignes de stats, puis clique au centre des cases Rune, Pa et Ra de la 1re ligne, et enfin au centre de la case Rune de la 2e ligne. Le résultat est enregistré dans `calibration.json`.
+Ouvre la fenêtre de FM en jeu avec ton objet, bien visible. Lance ensuite la calibration : bouton **Recalibrer** dans la fenêtre de lancement (elle se lance aussi toute seule au premier mode direct), ou `py -m fmhelper calibrate`.
+
+Une **capture figée** de ton écran s'affiche en plein écran, avec la consigne en haut :
+1. maintiens le clic gauche et trace un rectangle autour des lignes de stats (valeurs et noms) ;
+2. clique au centre de la case **Rune** de la 1re ligne ;
+3. clique au centre de la case **Pa** de la 1re ligne ;
+4. clique au centre de la case **Ra** de la 1re ligne ;
+5. clique au centre de la case **Rune** de la 2e ligne.
+
+**Clic droit** annule la dernière étape, **Échap** quitte sans enregistrer. Le résultat est enregistré dans `calibration.json`. La mise à l'échelle Windows (125 %, 150 %…) est prise en compte. Si le jeu est en plein écran exclusif et que la capture reste noire, passe-le en « fenêtré » ou « plein écran fenêtré ».
 
 ### 4. FM en direct
 ```

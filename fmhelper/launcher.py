@@ -67,6 +67,7 @@ class Launcher:
         ttk.Button(act, text="Calculer les runes", command=self.compute).pack(side="left")
         ttk.Button(act, text="Lire l'objet à l'écran", command=self.read_screen).pack(side="left", padx=4)
         ttk.Button(act, text="Enregistrer…", command=self.save_json).pack(side="left")
+        ttk.Button(act, text="Recalibrer", command=self.recalibrate).pack(side="left", padx=4)
         ttk.Button(act, text="Lancer la FM en direct ▶", command=self.go_live).pack(side="right")
 
         self.out = tk.Text(self.root, height=16, font=("Consolas", 10))
@@ -235,13 +236,25 @@ class Launcher:
             return Calibration.load(self.cal_path)
         from tkinter import messagebox
 
-        if not messagebox.askokcancel("Calibration", "Première utilisation : ouvre la fenêtre de FM en jeu avec ton objet, puis clique OK pour repérer l'écran (5 clics)."):
+        if not messagebox.askokcancel("Calibration", "Première utilisation : il faut repérer la fenêtre de FM.\n\n"
+                                      "1. Ouvre la fenêtre de FM en jeu avec ton objet, bien visible.\n"
+                                      "2. Clique OK : une capture figée de l'écran s'affiche.\n"
+                                      "3. Suis les 5 étapes écrites en haut (rectangle autour des stats, puis 4 clics sur les cases).\n\n"
+                                      "Clic droit : annuler une étape · Échap : quitter."):
             return None
-        self.root.withdraw()
         try:
-            return calibrate(self.cal_path)
-        finally:
-            self.root.deiconify()
+            return calibrate(self.cal_path, master=self.root)
+        except SystemExit:
+            self.v_status.set("Calibration annulée.")
+            return None
+
+    def recalibrate(self):
+        try:
+            os.remove(self.cal_path)
+        except OSError:
+            pass
+        if self._calibration():
+            self.v_status.set("Calibration enregistrée.")
 
     def read_screen(self):
         if not self.item:

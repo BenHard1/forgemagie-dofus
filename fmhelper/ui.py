@@ -71,44 +71,97 @@ class Calibration:
 # ---------------------------------------------------------------------------
 
 STEPS = [
-    "1/5 — Trace un rectangle (clic-glisser) autour des LIGNES DE STATS de l'objet dans la fenêtre de FM.",
-    "2/5 — Clique au centre de la case « Rune » (rune de base) de la 1re ligne.",
-    "3/5 — Clique au centre de la case « Pa » de la 1re ligne.",
-    "4/5 — Clique au centre de la case « Ra » de la 1re ligne.",
-    "5/5 — Clique au centre de la case « Rune » de la 2e ligne.",
+    "Étape 1/5 — Maintiens le clic gauche et trace un rectangle autour des LIGNES DE STATS de l'objet (valeurs + noms).",
+    "Étape 2/5 — Clique au centre de la case « Rune » (rune de base) de la 1re ligne.",
+    "Étape 3/5 — Clique au centre de la case « Pa » de la 1re ligne.",
+    "Étape 4/5 — Clique au centre de la case « Ra » de la 1re ligne.",
+    "Étape 5/5 — Clique au centre de la case « Rune » de la 2e ligne.",
 ]
+HELP = "Clic droit : annuler la dernière étape   ·   Échap : quitter sans enregistrer"
 
 
-def calibrate(path: str = "calibration.json") -> Calibration:
-    """Affiche une capture plein écran et demande 5 repères à l'utilisateur."""
-    _dpi_aware()
-    import tkinter as tk
-
+def _grab_screen():
     import mss
-    from PIL import Image, ImageTk
+    from PIL import Image
 
     with (mss.MSS() if hasattr(mss, "MSS") else mss.mss()) as sct:
-        mon = sct.monitors[1]
+        mon = dict(sct.monitors[1])
         shot = sct.grab(mon)
-        img = Image.frombytes("RGB", shot.size, shot.rgb)
+        return mon, Image.frombytes("RGB", shot.size, shot.rgb)
 
-    root = tk.Tk()
-    root.attributes("-fullscreen", True)
-    root.attributes("-topmost", True)
-    cv = tk.Canvas(root, highlightthickness=0, cursor="crosshair")
+
+def calibrate(path: str = "calibration.json", master=None) -> Calibration:
+    """Affiche une capture (figée) de l'écran principal et demande 5 repères.
+
+    master : fenêtre Tk existante (fenêtre de lancement). Sans elle, une
+    fenêtre Tk est créée. On n'ouvre jamais deux Tk() à la fois : l'image de la
+    capture serait rattachée à la mauvaise fenêtre et l'écran resterait gris.
+    Les coordonnées sont converties en pixels réels de l'écran, même avec une
+    mise à l'échelle Windows (125 %, 150 %...).
+    """
+    _dpi_aware()
+    import time
+    import tkinter as tk
+
+    from PIL import ImageTk
+
+    own_root = master is None
+    if own_root:
+        root = tk.Tk()
+        root.withdraw()
+    else:
+        root = master
+        root.withdraw()
+        root.update()
+        time.sleep(0.4)  # laisse la fenêtre de lancement disparaître avant la capture
+
+    mon, img = _grab_screen()
+    win = tk.Toplevel(root)
+    win.overrideredirect(True)
+    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+    win.geometry(f"{sw}x{sh}+0+0")
+    win.attributes("-topmost", True)
+    # Échelle entre les pixels Tk (logiques) et les pixels réels capturés
+    fx, fy = img.width / sw, img.height / sh
+    shown = img if (fx, fy) == (1, 1) else img.resize((sw, sh))
+    photo = ImageTk.PhotoImage(shown, master=win)
+    cv = tk.Canvas(win, width=sw, height=sh, highlightthickness=0, cursor="crosshair")
     cv.pack(fill="both", expand=True)
-    photo = ImageTk.PhotoImage(img)
     cv.create_image(0, 0, image=photo, anchor="nw")
-    banner = cv.create_text(20, 20, anchor="nw", text=STEPS[0], fill="#00ff66", font=("Segoe UI", 18, "bold"))
-    cv.create_text(20, 55, anchor="nw", text="Échap pour annuler", fill="#ffffff", font=("Segoe UI", 12))
+    cv.image = photo  # garde une référence
 
-    state: Dict = {"step": 0, "start": None, "rect": None, "pts": []}
+    box = cv.create_rectangle(10, 10, 10, 10, fill="#000000", outline="#00ff66", width=2)
+    banner = cv.create_text(24, 20, anchor="nw", text=STEPS[0], fill="#00ff66", font=("Segoe UI", 16, "bold"), width=sw - 60)
+    helpt = cv.create_text(24, 60, anchor="nw", text=HELP, fill="#ffffff", font=("Segoe UI", 11))
+
+    def place_banner():
+        x0, y0, x1, y1 = cv.bbox(banner)
+        cv.coords(helpt, 24, y1 + 6)
+        hx0, hy0, hx1, hy1 = cv.bbox(helpt)
+        cv.coords(box, 12, 10, max(x1, hx1) + 12, hy1 + 10)
+
+    place_banner()
+    state: Dict = {"step": 0, "start": None, "rect": None, "pts": [], "marks": [], "done": False}
     ox, oy = mon["left"], mon["top"]
+
+    def real(x, y):
+        return int(round(x * fx)) + ox, int(round(y * fy)) + oy
+
+    def set_step(n):
+        state["step"] = n
+        if n >= len(STEPS):
+            state["done"] = True
+            win.destroy()
+            return
+        cv.itemconfig(banner, text=STEPS[n])
+        place_banner()
 
     def on_press(e):
         if state["step"] == 0:
+            if state["rect"]:
+                cv.delete(state["rect"])
             state["start"] = (e.x, e.y)
-            state["rect"] = cv.create_rectangle(e.x, e.y, e.x, e.y, outline="#00ff66", width=2)
+            state["rect"] = cv.create_rectangle(e.x, e.y, e.x, e.y, outline="#00ff66", width=3)
 
     def on_drag(e):
         if state["step"] == 0 and state["rect"]:
@@ -117,28 +170,50 @@ def calibrate(path: str = "calibration.json") -> Calibration:
 
     def on_release(e):
         if state["step"] == 0:
-            x0, y0 = state["start"]
-            l, t = min(x0, e.x), min(y0, e.y)
-            w, h = abs(e.x - x0), abs(e.y - y0)
-            if w < 10 or h < 10:
+            if not state["start"]:
                 return
-            state["bbox"] = (l + ox, t + oy, w, h)
+            x0, y0 = state["start"]
+            if abs(e.x - x0) < 10 or abs(e.y - y0) < 10:
+                cv.itemconfig(banner, text=STEPS[0] + "  (rectangle trop petit, recommence)")
+                return
+            l, t = real(min(x0, e.x), min(y0, e.y))
+            r, b = real(max(x0, e.x), max(y0, e.y))
+            state["bbox"] = (l, t, r - l, b - t)
         else:
-            state["pts"].append((e.x + ox, e.y + oy))
-            cv.create_oval(e.x - 6, e.y - 6, e.x + 6, e.y + 6, outline="#00ff66", width=3)
-        state["step"] += 1
-        if state["step"] >= len(STEPS):
-            root.destroy()
-        else:
-            cv.itemconfig(banner, text=STEPS[state["step"]])
+            state["pts"].append(real(e.x, e.y))
+            state["marks"].append(cv.create_oval(e.x - 8, e.y - 8, e.x + 8, e.y + 8, outline="#00ff66", width=3))
+        set_step(state["step"] + 1)
+
+    def undo(_e=None):
+        if state["step"] == 0:
+            return
+        if state["pts"]:
+            state["pts"].pop()
+            cv.delete(state["marks"].pop())
+        elif state["rect"]:
+            cv.delete(state["rect"])
+            state["rect"] = None
+        set_step(state["step"] - 1)
 
     cv.bind("<ButtonPress-1>", on_press)
     cv.bind("<B1-Motion>", on_drag)
     cv.bind("<ButtonRelease-1>", on_release)
-    root.bind("<Escape>", lambda e: root.destroy())
-    root.mainloop()
+    cv.bind("<ButtonPress-3>", undo)
+    win.bind("<Escape>", lambda e: win.destroy())
+    win.update()
+    win.lift()
+    win.focus_force()
+    try:
+        win.grab_set()  # tous les clics vont à la fenêtre de calibration
+    except tk.TclError:
+        pass
+    root.wait_window(win)
+    if own_root:
+        root.destroy()
+    else:
+        root.deiconify()
 
-    if state["step"] < len(STEPS):
+    if not state["done"]:
         raise SystemExit("Calibration annulée.")
     rune0, pa0, ra0, rune1 = state["pts"]
     cal = Calibration(
