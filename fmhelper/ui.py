@@ -347,6 +347,7 @@ class LiveApp:
         self.rec = None
         self.last_outcome = None
         self.alerts: List[str] = []
+        self.go_back = False
 
         self.root = tk.Tk()
         self.root.title("Aide FM — lecture seule")
@@ -364,6 +365,7 @@ class LiveApp:
         tk.Label(self.alert_frame, textvariable=self.v_alert, bg=ALERT_COLOR, fg="white", font=("Segoe UI", 11, "bold"),
                  wraplength=330, justify="left").pack(side="left", padx=6, pady=4)
         tk.Button(self.alert_frame, text="OK", command=self.clear_alerts).pack(side="right", padx=6)
+        tk.Button(self.alert_frame, text="Changer d'objet", command=self.back).pack(side="right")
         self.anchor = tk.Label(self.root, textvariable=self.v_rec, fg="#0a7d32", font=("Segoe UI", 11, "bold"), wraplength=380, justify="left")
         self.anchor.pack(anchor="w", padx=8)
         tk.Label(self.root, textvariable=self.v_chances, font=("Consolas", 10), justify="left").pack(anchor="w", padx=8)
@@ -378,6 +380,7 @@ class LiveApp:
         tk.Button(bar, text="+1", command=lambda: self.adj(1)).pack(side="left")
         tk.Button(bar, text="=0", command=lambda: self.adj(None)).pack(side="left")
         tk.Button(bar, text="Liste d'achats", command=self.show_shopping).pack(side="left")
+        tk.Button(bar, text="⟵ Changer d'objet", command=self.back).pack(side="right")
         self.refresh()
 
     # -- actions --
@@ -385,6 +388,15 @@ class LiveApp:
         self.paused = not self.paused
         if self.paused:
             self.overlay.hide()
+
+    def back(self):
+        """Arrête le suivi en direct et revient à la fenêtre de choix de l'équipement."""
+        self.go_back = True
+        self.paused = True
+        try:
+            self.overlay.hide()
+        finally:
+            self.root.destroy()
 
     def clear_alerts(self):
         self.alerts = []
@@ -494,6 +506,8 @@ class LiveApp:
             w.writerow([time.strftime("%Y-%m-%d %H:%M:%S"), obs.rune.name if obs.rune else "", obs.outcome,
                         obs.delta_weight, obs.reliquat_before, obs.reliquat_after, sc, obs.ambiguous])
 
-    def run(self):
+    def run(self) -> bool:
+        """Lance la boucle. Renvoie True si l'utilisateur a demandé à changer d'objet."""
         self.root.after(self.interval, self.tick)
         self.root.mainloop()
+        return self.go_back

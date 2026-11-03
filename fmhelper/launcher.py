@@ -21,6 +21,7 @@ class Launcher:
         self.tk, self.ttk = tk, ttk
         self.cal_path = calibration_path
         self.item: Optional[Item] = None
+        self.next_live = None
         self.results: List[dict] = []
         self.rows = []  # (line, var_current, var_target)
 
@@ -282,18 +283,24 @@ class Launcher:
         cal = self._calibration()
         if not cal:
             return
-        from .ui import LiveApp
-
-        item, rel = self.item, self.reliquat()
+        # La fenêtre de lancement se ferme ; main() lance le mode direct puis la rouvre
+        # si l'utilisateur clique sur « Changer d'objet ».
+        self.next_live = (self.item, cal, self.reliquat())
         self.root.destroy()
-        LiveApp(item, cal, reliquat=rel).run()
 
     def run(self):
         self.root.mainloop()
 
 
 def main(calibration_path: str = "calibration.json"):
-    from .ui import _dpi_aware
+    from .ui import LiveApp, _dpi_aware
 
     _dpi_aware()
-    Launcher(calibration_path).run()
+    while True:
+        launcher = Launcher(calibration_path)
+        launcher.run()
+        if launcher.next_live is None:
+            return  # fenêtre fermée
+        item, cal, rel = launcher.next_live
+        if not LiveApp(item, cal, reliquat=rel).run():
+            return  # mode direct fermé sans « Changer d'objet »

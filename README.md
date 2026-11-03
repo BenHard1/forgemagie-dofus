@@ -107,6 +107,7 @@ python -m fmhelper live mon_objet.json --reliquat 0
 - **Alertes** (bandeau rouge dans le panneau et au-dessus de la fenêtre de FM) : cible atteinte, PA/PM/PO naturel qui vient de sauter, reliquat qui tombe à 0. Clique sur **OK** pour les effacer.
 - Après chaque clic, l'outil relit l'écran, détecte l'issue (SC, SN ou EC), met à jour le reliquat et déplace le cadre. L'outil ne clique jamais à ta place.
 - Les boutons **Reliquat −1 / +1 / =0** servent à corriger l'estimation (par exemple si le jeu affiche « −reliquat » alors que l'outil a supposé un SC).
+- **⟵ Changer d'objet** (en bas du panneau, et dans le bandeau « Cible atteinte ») arrête le suivi et rouvre la fenêtre de choix de l'équipement, sans relancer l'outil. La calibration est conservée.
 - Chaque coup est enregistré dans `historique_fm.csv`. Cet historique servira à recalibrer les chances sur tes vraies données.
 - Pour un **exo**, la ligne n'existe pas encore à l'écran : le panneau te dit quelle rune glisser dans la case de rune.
 - Si Tesseract n'est pas trouvé : `--tesseract "C:\Program Files\Tesseract-OCR\tesseract.exe"`.
