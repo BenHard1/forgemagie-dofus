@@ -46,6 +46,8 @@ Si `py` n'est pas reconnu, essaie `python` à la place. Si la lecture d'écran n
 
 ## Utilisation
 
+**Débutant en FM ?** `py -m fmhelper progression` affiche les objets à FM pour monter Joaillomage de 1 à 200 (détails dans [docs/MONTER_JOAILLOMAGE.md](docs/MONTER_JOAILLOMAGE.md)).
+
 ### Le plus simple : la fenêtre de lancement
 ```
 python -m fmhelper

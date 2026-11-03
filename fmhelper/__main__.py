@@ -8,6 +8,7 @@ Commandes :
   plan ITEM.json        ordre de clics théorique + liste d'achats estimée
   calibrate             repère la fenêtre de FM à l'écran (une fois par résolution)
   live ITEM.json        lit l'écran en continu et entoure en vert la rune à cliquer
+  progression           plan de montée Joaillomage 1 → 200
   stats                 liste des clés de caractéristiques utilisables dans ITEM.json
 """
 from __future__ import annotations
@@ -156,6 +157,10 @@ def main(argv=None):
     sl.add_argument("--tesseract", help="chemin de tesseract.exe si non trouvé")
     sl.add_argument("--lang", default="fra")
     sl.set_defaults(func=cmd_live)
+
+    sj = sub.add_parser("progression", help="plan de montée Joaillomage 1 → 200")
+    sj.add_argument("--essentiel", action="store_true", help="seulement les étapes clés")
+    sj.set_defaults(func=lambda a: __import__("fmhelper.progression", fromlist=["print_plan"]).print_plan(a.essentiel))
 
     ss = sub.add_parser("stats", help="clés de caractéristiques")
     ss.set_defaults(func=cmd_stats)
