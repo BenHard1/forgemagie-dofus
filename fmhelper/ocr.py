@@ -90,6 +90,93 @@ def find_tesseract() -> Optional[str]:
     return None
 
 
+TESSDATA_URL = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/{lang}.traineddata"
+_LANG_CACHE: Dict[str, Tuple[str, str]] = {}  # lang demandée -> (lang utilisée, config --tessdata-dir)
+LANG_NOTE = ""  # message à afficher (langue de repli, téléchargement…)
+
+
+def user_tessdata_dir() -> str:
+    import os
+
+    base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".local", "share")
+    return os.path.join(base, "fmhelper", "tessdata")
+
+
+def _download_lang(lang: str, dest_dir: str, timeout: float = 30.0) -> bool:
+    """Télécharge {lang}.traineddata (tessdata_fast, ~1 à 4 Mo) dans un dossier utilisateur."""
+    import os
+    import urllib.request
+
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, f"{lang}.traineddata")
+    tmp = dest + ".part"
+    try:
+        req = urllib.request.Request(TESSDATA_URL.format(lang=lang), headers={"User-Agent": "fmhelper"})
+        with urllib.request.urlopen(req, timeout=timeout) as r, open(tmp, "wb") as f:
+            f.write(r.read())
+        if os.path.getsize(tmp) < 100_000:
+            os.remove(tmp)
+            return False
+        os.replace(tmp, dest)
+        return True
+    except Exception:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return False
+
+
+def resolve_lang(lang: str = "fra") -> Tuple[str, str]:
+    """Trouve une langue OCR utilisable : (langue, options).
+
+    1. la langue demandée si Tesseract l'a déjà ;
+    2. sinon, elle est téléchargée une fois dans %LOCALAPPDATA%\\fmhelper\\tessdata ;
+    3. sinon, repli sur l'anglais (les libellés sont reconnus sans accents, ça marche bien).
+    """
+    global LANG_NOTE
+    import os
+    import shutil
+
+    import pytesseract
+
+    if lang in _LANG_CACHE:
+        return _LANG_CACHE[lang]
+    try:
+        installed = set(pytesseract.get_languages(config=""))
+    except Exception:
+        installed = set()
+    if lang in installed:
+        res = (lang, "")
+    else:
+        udir = user_tessdata_dir()
+        have = os.path.exists(os.path.join(udir, f"{lang}.traineddata")) or _download_lang(lang, udir)
+        if have:
+            # le dossier utilisateur doit aussi contenir osd/eng si on veut s'y limiter : on y copie eng
+            src_eng = None
+            try:
+                exe = shutil.which(pytesseract.pytesseract.tesseract_cmd) or pytesseract.pytesseract.tesseract_cmd
+                cand = os.path.join(os.path.dirname(exe), "tessdata", "eng.traineddata")
+                src_eng = cand if os.path.exists(cand) else None
+            except Exception:
+                pass
+            if src_eng and not os.path.exists(os.path.join(udir, "eng.traineddata")):
+                try:
+                    shutil.copy(src_eng, udir)
+                except OSError:
+                    pass
+            res = (lang, f'--tessdata-dir "{udir}"')
+            LANG_NOTE = f"Langue OCR « {lang} » installée dans {udir}."
+        elif "eng" in installed:
+            res = ("eng", "")
+            LANG_NOTE = (f"Langue OCR « {lang} » absente et téléchargement impossible : lecture en anglais. "
+                         "Pour de meilleurs résultats, réinstalle Tesseract en cochant French.")
+        else:
+            res = (lang, "")  # laissera Tesseract afficher son erreur
+    _LANG_CACHE[lang] = res
+    return res
+
+
 def read_region(bbox, lang: str = "fra", tesseract_cmd: Optional[str] = None) -> Dict[str, int]:
     import pytesseract
 
@@ -99,6 +186,7 @@ def read_region(bbox, lang: str = "fra", tesseract_cmd: Optional[str] = None) ->
         found = find_tesseract()
         if found:
             pytesseract.pytesseract.tesseract_cmd = found
+    use_lang, extra = resolve_lang(lang)
     img = preprocess(grab(bbox))
-    text = pytesseract.image_to_string(img, lang=lang, config="--psm 6")
+    text = pytesseract.image_to_string(img, lang=use_lang, config=f"--psm 6 {extra}".strip())
     return values_dict(parse_lines(text))

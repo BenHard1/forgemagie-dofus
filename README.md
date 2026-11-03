@@ -26,7 +26,7 @@ L'OCR peut se tromper : l'outil n'accepte une lecture que si **deux captures suc
 ## Démarrage rapide sous Windows
 
 1. **Python** (3.10 ou plus récent) : installe Python 3.12 depuis https://www.python.org/downloads/. Au premier écran de l'installateur, coche **« Add python.exe to PATH »**. Tkinter est inclus par défaut.
-2. **Tesseract OCR** (lecture de l'écran) : installe-le depuis https://github.com/UB-Mannheim/tesseract/wiki. Pendant l'installation, ouvre « Additional language data » et coche **French**. L'outil trouve tout seul `C:\Program Files\Tesseract-OCR\tesseract.exe`.
+2. **Tesseract OCR** (lecture de l'écran) : installe-le depuis https://github.com/UB-Mannheim/tesseract/wiki. Pendant l'installation, ouvre « Additional language data » et coche **French**. L'outil trouve tout seul `C:\Program Files\Tesseract-OCR\tesseract.exe`. Si tu as oublié French, ce n'est pas bloquant : l'outil télécharge la langue tout seul (environ 1 Mo, dans `%LOCALAPPDATA%\fmhelper\tessdata`), ou lit l'écran en anglais, ce qui marche aussi pour les noms de stats.
 3. **Récupérer le projet** :
    - avec Git (recommandé, pour les mises à jour automatiques) : dans l'Explorateur, ouvre le dossier où tu veux l'installer, tape `cmd` dans la barre d'adresse, puis lance `git clone https://github.com/BenHard1/forgemagie-dofus.git` ;
    - sans Git : sur https://github.com/BenHard1/forgemagie-dofus, clique sur **Code ▸ Download ZIP** et décompresse le dossier (pas de mise à jour automatique).

@@ -175,3 +175,28 @@ def test_formula_quality_and_exo_pa():
 def test_choose_tier_prefers_bigger_rune_past_x14():
     it = one_line(40)
     assert choose_tier(it.line("force"), it).tier == "ra"
+
+
+def test_resolve_lang_fallbacks(monkeypatch, tmp_path):
+    import pytesseract
+    from fmhelper import ocr
+
+    monkeypatch.setattr(ocr, "_LANG_CACHE", {})
+    monkeypatch.setattr(ocr, "user_tessdata_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(pytesseract, "get_languages", lambda config="": ["eng", "osd"])
+    # téléchargement OK -> fra depuis le dossier utilisateur
+    def fake_dl(lang, d, timeout=30.0):
+        (tmp_path / f"{lang}.traineddata").write_bytes(b"x" * 200_000)
+        return True
+    monkeypatch.setattr(ocr, "_download_lang", fake_dl)
+    lang, extra = ocr.resolve_lang("fra")
+    assert lang == "fra" and str(tmp_path) in extra
+    # téléchargement impossible -> anglais
+    monkeypatch.setattr(ocr, "_LANG_CACHE", {})
+    monkeypatch.setattr(ocr, "user_tessdata_dir", lambda: str(tmp_path / "vide"))
+    monkeypatch.setattr(ocr, "_download_lang", lambda *a, **k: False)
+    assert ocr.resolve_lang("fra") == ("eng", "")
+    # fra déjà installée
+    monkeypatch.setattr(ocr, "_LANG_CACHE", {})
+    monkeypatch.setattr(pytesseract, "get_languages", lambda config="": ["eng", "fra"])
+    assert ocr.resolve_lang("fra") == ("fra", "")

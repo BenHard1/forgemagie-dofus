@@ -430,11 +430,18 @@ class LiveApp:
     def tick(self):
         if not self.paused:
             try:
-                from .ocr import read_region
+                from . import ocr
 
-                vals = read_region(self.cal.stats_bbox, lang=self.lang, tesseract_cmd=self.tess)
+                vals = ocr.read_region(self.cal.stats_bbox, lang=self.lang, tesseract_cmd=self.tess)
+                if ocr.LANG_NOTE:
+                    self.v_last.set(ocr.LANG_NOTE)
+                    ocr.LANG_NOTE = ""
             except Exception as e:  # OCR indisponible : on continue sans planter
-                self.v_last.set(f"Lecture écran impossible : {e}")
+                msg = str(e)
+                if "traineddata" in msg or "Failed loading language" in msg:
+                    msg = ("langue française de Tesseract absente. Réinstalle Tesseract en cochant "
+                           "« French » (Additional language data), ou vérifie ta connexion pour le téléchargement automatique.")
+                self.v_last.set(f"Lecture écran impossible : {msg}")
                 vals = None
             if vals:
                 known = [k for k in vals if self.session.item.line(k)]
