@@ -10,13 +10,17 @@ from typing import Dict, List, Optional, Tuple
 
 from .runes import match_stat
 
-_LINE_RE = re.compile(r"^\s*([+\-−–]?)\s*(\d{1,4})\s*(%?)\s*(.+?)\s*$")
+_NUM_RE = re.compile(r"([+\-−–]?)\s?(\d{1,4})")
+_WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ]{2,}")
 
 
 def parse_lines(text: str) -> List[Tuple[str, int]]:
     """Transforme le texte OCR en liste (clé de stat, valeur).
 
-    Accepte « 245 Vitalité », « +12 Force », « -5 Sagesse », « 8% Résistance Feu ».
+    Accepte « 245 Vitalité », « +12 Force », « -5 Sagesse », « 8% Résistance Feu »,
+    et les lignes du tableau de FM « 101 150 ♥ 131 Vitalité -1 7 » (Min, Max,
+    valeur, stat, Modif., quantités de runes) : la valeur retenue est le
+    dernier nombre placé juste avant le nom de la stat.
     Les lignes non reconnues sont ignorées.
     """
     out = []
@@ -24,16 +28,23 @@ def parse_lines(text: str) -> List[Tuple[str, int]]:
         raw = raw.replace("|", " ").strip()
         if not raw:
             continue
-        m = _LINE_RE.match(raw)
-        if not m:
+        w = _WORD_RE.search(raw)
+        if not w:
             continue
-        sign, num, pct, label = m.groups()
+        nums = [m for m in _NUM_RE.finditer(raw, 0, w.start())]
+        if not nums:
+            continue
+        m = nums[-1]
+        sign, num = m.group(1), m.group(2)
+        between = raw[m.end():w.start()]
+        pct = "%" in between
+        label = raw[w.start():]
         label = re.sub(r"[^\w%' \-àâäéèêëîïôöùûüç]", " ", label, flags=re.I).strip()
         if pct:
             label = "% " + label
         key = match_stat(label)
         if key is None:
-            # Texte parasite après le nom de la stat (colonnes, quantités de runes…) :
+            # Texte parasite après le nom de la stat (Modif., quantités de runes…) :
             # on raccourcit le libellé par la fin jusqu'à reconnaître une stat.
             words = label.split()
             for n in range(len(words) - 1, 0, -1):
@@ -47,6 +58,12 @@ def parse_lines(text: str) -> List[Tuple[str, int]]:
             val = -val
         out.append((key, val))
     return out
+
+
+def parse_reliquat(text: str) -> Optional[float]:
+    """Lit « reliquat : 12 » (ou juste « 12 »)."""
+    m = re.search(r"(\d+(?:[.,]\d+)?)", text.replace(" ", ""))
+    return float(m.group(1).replace(",", ".")) if m else None
 
 
 def values_dict(pairs: List[Tuple[str, int]]) -> Dict[str, int]:
@@ -68,18 +85,24 @@ def grab(bbox: Tuple[int, int, int, int]):
 
 
 def preprocess(img, scale: int = 2, invert: Optional[bool] = None):
-    """Agrandit, passe en niveaux de gris et binarise (texte clair sur fond sombre en jeu)."""
-    from PIL import ImageOps
+    """Prépare l'image pour Tesseract (texte coloré sur fond sombre en jeu).
 
-    g = ImageOps.grayscale(img)
-    g = g.resize((g.width * scale, g.height * scale))
+    On garde la composante la plus claire de chaque pixel (le texte vert, rouge
+    ou blanc ressort pareil), on agrandit, puis on inverse pour avoir du texte
+    noir sur fond blanc et on binarise.
+    """
+    from PIL import ImageChops, ImageOps
+
+    r, g, b = img.convert("RGB").split()
+    v = ImageChops.lighter(ImageChops.lighter(r, g), b)
+    v = v.resize((v.width * scale, v.height * scale))
     if invert is None:
-        hist = g.histogram()
-        dark = sum(hist[:128]) > sum(hist[128:])
-        invert = dark
+        hist = v.histogram()
+        invert = sum(hist[:128]) > sum(hist[128:])
     if invert:
-        g = ImageOps.invert(g)
-    return g.point(lambda p: 255 if p > 150 else 0)
+        v = ImageOps.invert(v)
+        return v.point(lambda p: 255 if p > 140 else 0)
+    return v.point(lambda p: 255 if p > 115 else 0)
 
 
 def find_tesseract() -> Optional[str]:
@@ -203,3 +226,14 @@ def read_region(bbox, lang: str = "fra", tesseract_cmd: Optional[str] = None) ->
 
 
 LAST_TEXT = ""  # dernier texte brut lu (diagnostic)
+
+
+def read_reliquat(bbox, tesseract_cmd: Optional[str] = None) -> Optional[float]:
+    """Lit le reliquat affiché par le jeu (« reliquat : N »)."""
+    import pytesseract
+
+    if tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+    img = preprocess(grab(bbox), scale=3)
+    text = pytesseract.image_to_string(img, config="--psm 7 -c tessedit_char_whitelist=0123456789.,:reliquatRELIQUAT")
+    return parse_reliquat(text.split(":")[-1])

@@ -89,12 +89,13 @@ Les exos ou overs lourds (PA, PM, PO, Invo) ne sont planifiés que si le reliqua
 ### 3. Calibrer (une fois par résolution / position de fenêtre)
 Ouvre la fenêtre de FM en jeu avec ton objet, bien visible. Lance ensuite la calibration : bouton **Recalibrer** dans la fenêtre de lancement (elle se lance aussi toute seule au premier mode direct), ou `py -m fmhelper calibrate`.
 
-Une **capture figée** de ton écran s'affiche en plein écran, avec la consigne en haut :
-1. maintiens le clic gauche et trace un rectangle autour des lignes de stats (valeurs et noms) ;
-2. clique au centre de la case **Rune** de la 1re ligne ;
+Place d'abord la souris sur l'écran où se trouve le jeu. Une **capture figée** de cet écran s'affiche en plein écran, avec la consigne en haut :
+1. maintiens le clic gauche et trace un rectangle autour de la colonne **« Effets / Carac. »** (valeur et nom de chaque stat, de la 1re à la dernière ligne). Laisse de côté les colonnes Min / Max ;
+2. clique au centre de la **1re case de rune** de la 1re ligne (la case sans titre, juste à gauche de « Pa ») ;
 3. clique au centre de la case **Pa** de la 1re ligne ;
 4. clique au centre de la case **Ra** de la 1re ligne ;
-5. clique au centre de la case **Rune** de la 2e ligne.
+5. clique au centre de la 1re case de rune de la **2e ligne** ;
+6. trace un rectangle autour du texte **« reliquat : … »** en haut de la fenêtre. L'outil lit alors le vrai reliquat du jeu au lieu de l'estimer.
 
 **Clic droit** annule la dernière étape, **Échap** quitte sans enregistrer. Le résultat est enregistré dans `calibration.json`. La mise à l'échelle Windows (125 %, 150 %…) est prise en compte. Si le jeu est en plein écran exclusif et que la capture reste noire, passe-le en « fenêtré » ou « plein écran fenêtré ».
 

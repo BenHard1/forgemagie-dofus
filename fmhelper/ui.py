@@ -48,6 +48,7 @@ class Calibration:
     col_dx: Tuple[int, int]
     row_dy: int
     radius: int = 18
+    reliquat_bbox: Optional[Tuple[int, int, int, int]] = None  # zone « reliquat : N » du jeu
 
     def cell(self, row: int, tier: str) -> Tuple[int, int]:
         x, y = self.cell0
@@ -63,7 +64,9 @@ class Calibration:
     def load(cls, path: str) -> "Calibration":
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
-        return cls(tuple(d["stats_bbox"]), tuple(d["cell0"]), tuple(d["col_dx"]), int(d["row_dy"]), int(d.get("radius", 18)))
+        rb = d.get("reliquat_bbox")
+        return cls(tuple(d["stats_bbox"]), tuple(d["cell0"]), tuple(d["col_dx"]), int(d["row_dy"]),
+                   int(d.get("radius", 18)), tuple(rb) if rb else None)
 
 
 # ---------------------------------------------------------------------------
@@ -71,21 +74,30 @@ class Calibration:
 # ---------------------------------------------------------------------------
 
 STEPS = [
-    "Étape 1/5 — Maintiens le clic gauche et trace un rectangle autour des LIGNES DE STATS de l'objet (valeurs + noms).",
-    "Étape 2/5 — Clique au centre de la case « Rune » (rune de base) de la 1re ligne.",
-    "Étape 3/5 — Clique au centre de la case « Pa » de la 1re ligne.",
-    "Étape 4/5 — Clique au centre de la case « Ra » de la 1re ligne.",
-    "Étape 5/5 — Clique au centre de la case « Rune » de la 2e ligne.",
+    "Étape 1/6 — Maintiens le clic gauche et trace un rectangle autour de la colonne « Effets / Carac. » "
+    "(valeur + nom de chaque stat, de la 1re à la dernière ligne). Pas les colonnes Min / Max.",
+    "Étape 2/6 — Clique au centre de la 1re case de rune de la 1re ligne (la case sans titre, juste à gauche de « Pa »).",
+    "Étape 3/6 — Clique au centre de la case « Pa » de la 1re ligne.",
+    "Étape 4/6 — Clique au centre de la case « Ra » de la 1re ligne.",
+    "Étape 5/6 — Clique au centre de la 1re case de rune de la 2e ligne.",
+    "Étape 6/6 — Trace un rectangle autour du texte « reliquat : … » en haut de la fenêtre.",
 ]
+RECT_STEPS = (0, 5)
 HELP = "Clic droit : annuler la dernière étape   ·   Échap : quitter sans enregistrer"
 
 
-def _grab_screen():
+def _grab_screen(point: Optional[Tuple[int, int]] = None):
+    """Capture l'écran qui contient `point` (la souris), sinon l'écran principal."""
     import mss
     from PIL import Image
 
     with (mss.MSS() if hasattr(mss, "MSS") else mss.mss()) as sct:
         mon = dict(sct.monitors[1])
+        if point is not None:
+            for m in sct.monitors[1:]:
+                if m["left"] <= point[0] < m["left"] + m["width"] and m["top"] <= point[1] < m["top"] + m["height"]:
+                    mon = dict(m)
+                    break
         shot = sct.grab(mon)
         return mon, Image.frombytes("RGB", shot.size, shot.rgb)
 
@@ -115,13 +127,17 @@ def calibrate(path: str = "calibration.json", master=None) -> Calibration:
         root.update()
         time.sleep(0.4)  # laisse la fenêtre de lancement disparaître avant la capture
 
-    mon, img = _grab_screen()
+    mon, img = _grab_screen(root.winfo_pointerxy())
     win = tk.Toplevel(root)
     win.overrideredirect(True)
-    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
-    win.geometry(f"{sw}x{sh}+0+0")
+    # Fenêtre posée sur l'écran capturé (écran où se trouve la souris)
+    win.geometry(f"{mon['width']}x{mon['height']}+{mon['left']}+{mon['top']}")
     win.attributes("-topmost", True)
-    # Échelle entre les pixels Tk (logiques) et les pixels réels capturés
+    win.update_idletasks()
+    sw, sh = max(win.winfo_width(), 1), max(win.winfo_height(), 1)
+    if (sw, sh) == (1, 1):
+        sw, sh = mon["width"], mon["height"]
+    # Échelle entre les pixels Tk et les pixels réels capturés (mise à l'échelle Windows)
     fx, fy = img.width / sw, img.height / sh
     shown = img if (fx, fy) == (1, 1) else img.resize((sw, sh))
     photo = ImageTk.PhotoImage(shown, master=win)
@@ -141,7 +157,7 @@ def calibrate(path: str = "calibration.json", master=None) -> Calibration:
         cv.coords(box, 12, 10, max(x1, hx1) + 12, hy1 + 10)
 
     place_banner()
-    state: Dict = {"step": 0, "start": None, "rect": None, "pts": [], "marks": [], "done": False}
+    state: Dict = {"step": 0, "start": None, "rect": None, "rects": [], "pts": [], "marks": [], "done": False}
     ox, oy = mon["left"], mon["top"]
 
     def real(x, y):
@@ -157,43 +173,49 @@ def calibrate(path: str = "calibration.json", master=None) -> Calibration:
         place_banner()
 
     def on_press(e):
-        if state["step"] == 0:
+        if state["step"] in RECT_STEPS:
             if state["rect"]:
                 cv.delete(state["rect"])
             state["start"] = (e.x, e.y)
             state["rect"] = cv.create_rectangle(e.x, e.y, e.x, e.y, outline="#00ff66", width=3)
 
     def on_drag(e):
-        if state["step"] == 0 and state["rect"]:
+        if state["step"] in RECT_STEPS and state["rect"]:
             x0, y0 = state["start"]
             cv.coords(state["rect"], x0, y0, e.x, e.y)
 
     def on_release(e):
-        if state["step"] == 0:
+        n = state["step"]
+        if n in RECT_STEPS:
             if not state["start"]:
                 return
             x0, y0 = state["start"]
-            if abs(e.x - x0) < 10 or abs(e.y - y0) < 10:
-                cv.itemconfig(banner, text=STEPS[0] + "  (rectangle trop petit, recommence)")
+            if abs(e.x - x0) < 10 or abs(e.y - y0) < 6:
+                cv.itemconfig(banner, text=STEPS[n] + "  (rectangle trop petit, recommence)")
                 return
             l, t = real(min(x0, e.x), min(y0, e.y))
             r, b = real(max(x0, e.x), max(y0, e.y))
-            state["bbox"] = (l, t, r - l, b - t)
+            state["bbox" if n == 0 else "rbox"] = (l, t, r - l, b - t)
+            state["rects"].append(state["rect"])
+            state["rect"] = None
+            state["start"] = None
         else:
             state["pts"].append(real(e.x, e.y))
             state["marks"].append(cv.create_oval(e.x - 8, e.y - 8, e.x + 8, e.y + 8, outline="#00ff66", width=3))
-        set_step(state["step"] + 1)
+        set_step(n + 1)
 
     def undo(_e=None):
-        if state["step"] == 0:
+        n = state["step"]
+        if n == 0:
             return
-        if state["pts"]:
+        prev = n - 1
+        if prev in RECT_STEPS:
+            if state["rects"]:
+                cv.delete(state["rects"].pop())
+        elif state["pts"]:
             state["pts"].pop()
             cv.delete(state["marks"].pop())
-        elif state["rect"]:
-            cv.delete(state["rect"])
-            state["rect"] = None
-        set_step(state["step"] - 1)
+        set_step(prev)
 
     cv.bind("<ButtonPress-1>", on_press)
     cv.bind("<B1-Motion>", on_drag)
@@ -221,6 +243,8 @@ def calibrate(path: str = "calibration.json", master=None) -> Calibration:
         cell0=rune0,
         col_dx=(pa0[0] - rune0[0], ra0[0] - pa0[0]),
         row_dy=rune1[1] - rune0[1],
+        radius=max(10, min(30, abs(rune1[1] - rune0[1]) // 2 - 2)),
+        reliquat_bbox=state.get("rbox"),
     )
     cal.save(path)
     return cal
@@ -250,8 +274,17 @@ class Overlay:
             self.win = tk.Toplevel(root)
             self.win.overrideredirect(True)
             self.win.attributes("-topmost", True)
-            sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
-            self.win.geometry(f"{sw}x{sh}+0+0")
+            # Couvre tous les écrans (bureau virtuel) : le jeu peut être sur un 2e écran
+            self.ox, self.oy, sw, sh = 0, 0, self.win.winfo_screenwidth(), self.win.winfo_screenheight()
+            try:
+                import mss
+
+                with (mss.MSS() if hasattr(mss, "MSS") else mss.mss()) as sct:
+                    v = sct.monitors[0]
+                    self.ox, self.oy, sw, sh = v["left"], v["top"], v["width"], v["height"]
+            except Exception:
+                pass
+            self.win.geometry(f"{sw}x{sh}+{self.ox}+{self.oy}")
             self.win.configure(bg=self.KEY)
             self.win.attributes("-transparentcolor", self.KEY)
             self.cv = tk.Canvas(self.win, bg=self.KEY, highlightthickness=0)
@@ -288,6 +321,8 @@ class Overlay:
         """Cadre sur la rune à cliquer, texte à côté, petites étiquettes sur les autres cases
         (Windows) et bandeau d'alerte."""
         if self.full:
+            x, y = x - self.ox, y - self.oy
+            extras = [(ex - self.ox, ey - self.oy, t) for ex, ey, t in (extras or [])]
             self.cv.delete("all")
             self.cv.create_oval(x - r, y - r, x + r, y + r, outline=color, width=5)
             if label:
@@ -316,6 +351,7 @@ class Overlay:
 
     def alert_only(self, x: int, y: int, text: str):
         if self.full:
+            x, y = x - self.ox, y - self.oy
             self.cv.delete("all")
             self._banner(x, y, text)
             self.win.lift()
@@ -353,6 +389,7 @@ class LiveApp:
         self.alerts: List[str] = []
         self.go_back = False
         self.synced = False
+        self.zero_reads = 0
 
         self.root = tk.Tk()
         self.root.title("Aide FM — lecture seule")
@@ -479,7 +516,25 @@ class LiveApp:
         # On ne garde que les lignes de l'objet (le bruit d'OCR ne crée pas de fausses lignes)
         known = {k: v for k, v in vals.items() if self.session.item.line(k)}
         self.v_read.set(f"Lecture {time.strftime('%H:%M:%S')} : {len(known)}/{len(self.session.item.lines)} lignes reconnues")
+        if not known:
+            self.zero_reads += 1
+            if self.zero_reads >= 3:
+                self.v_last.set("Aucune ligne de l'objet reconnue : la zone lue ne montre pas la fenêtre de FM "
+                                "(fenêtre déplacée, autre écran, ou une fenêtre passe devant). Vérifie que la fenêtre "
+                                "de FM est visible, sinon reviens en arrière et clique sur « Recalibrer ».")
+        else:
+            self.zero_reads = 0
         return known
+
+    def _read_game_reliquat(self) -> Optional[float]:
+        if not self.cal.reliquat_bbox:
+            return None
+        try:
+            from .ocr import read_reliquat
+
+            return read_reliquat(self.cal.reliquat_bbox, tesseract_cmd=self.tess)
+        except Exception:
+            return None
 
     def _read_and_update(self):
         vals = self._read()
@@ -498,6 +553,12 @@ class LiveApp:
         obs = self.session.observe(vals, rune=rune)
         if obs is None:
             return
+        game_rel = self._read_game_reliquat()
+        if game_rel is not None:  # le jeu affiche le vrai reliquat : il remplace l'estimation
+            obs.reliquat_after = game_rel
+            self.session.reliquat = game_rel
+            if obs.ambiguous and obs.rune is not None and abs(obs.reliquat_before - game_rel) < 1e-6:
+                obs.outcome, obs.ambiguous, obs.note = "SC", False, ""
         self.log(obs)
         self.last_outcome = obs.outcome
         self.v_last.set(f"Dernier coup : {obs.outcome} {obs.rune.name if obs.rune else ''} — reliquat {obs.reliquat_after:g}. {obs.note}")
@@ -524,6 +585,9 @@ class LiveApp:
             if l is not None:
                 l.current = v
         self.synced = bool(vals)
+        rel = self._read_game_reliquat()
+        if rel is not None:
+            self.session.reliquat = rel
         if vals:
             self.last_read = vals
             self.v_last.set("Jet synchronisé avec l'écran. Tu peux cliquer sur la rune entourée.")

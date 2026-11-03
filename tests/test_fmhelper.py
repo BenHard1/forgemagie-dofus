@@ -206,3 +206,13 @@ def test_parse_lines_with_trailing_noise():
     txt = "312 Vitalité SC 47% 12\n64 Force Pa Ra\n8% Résistance Feu 3 2 1"
     d = values_dict(parse_lines(txt))
     assert d == {"vitalite": 312, "force": 64, "re_pct_feu": 8}
+
+
+def test_parse_real_fm_table_lines():
+    from fmhelper.ocr import parse_reliquat
+
+    txt = ("Min Max Effets / Carac. Modif. Pa Ra\n101 150 ® 131 Vitalité 7)\n21 30 # 30 Puissance 34 44\n"
+           "Ÿ 21 Sagesse\n6 8 Dommages Neutre\n& 7 Dommages Feu se\n1 1 © 1 Portée 681\n-10 -10 % -10 Tacle\n")
+    d = values_dict(parse_lines(txt))
+    assert d == {"vitalite": 131, "puissance": 30, "sagesse": 21, "do_neutre": 8, "do_feu": 7, "po": 1, "tacle": -10}
+    assert parse_reliquat(" 1\n") == 1.0 and parse_reliquat("12,5") == 12.5 and parse_reliquat("—") is None
