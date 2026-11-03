@@ -51,8 +51,13 @@ def cmd_plan(a):
         print(f"  {i:>2}. {n} x {rec.rune.name:<22} sur {rec.line.info.label:<20} ({ch} au 1er clic)")
     print("\nListe d'achats estimée (simulation de", a.runs, "FM) :")
     print(f"  {'Rune':28} {'min':>5} {'médiane':>8} {'p90':>6}")
-    for s in shopping_list(item, a.reliquat, runs=a.runs, force_heavy=a.forcer_exo):
+    rep = shopping_list(item, a.reliquat, runs=a.runs, force_heavy=a.forcer_exo, budget=a.budget)
+    for s in rep:
         print(f"  {s.rune:28} {s.minimum:>5} {s.median:>8} {s.p90:>6}")
+    print(f"\nFM terminée dans {rep.success_rate:.0%} des simulations (budget {rep.budget} clics).")
+    if rep.success_rate < 0.5:
+        print("Objectif très dur : vise un jet un peu sous le max (--current / \"target\" dans le JSON),")
+        print("ou monte les lignes ensemble avant de finir les derniers points.")
     from .model import ForgeSession
     from .planner import pending_heavy
 
@@ -61,8 +66,8 @@ def cmd_plan(a):
         names = ", ".join(l.info.label for l in waiting)
         print(f"\nEn attente de reliquat (non planifié) : {names}. Crée du reliquat d'abord")
         print("(faire sauter une grosse ligne avec une petite rune), ou relance avec --forcer-exo.")
-    print("\nmin = si tout passe ; médiane/p90 = avec échecs selon le modèle estimatif.")
-    print("Les chances sont des ESTIMATIONS communautaires, pas la formule officielle d'Ankama.")
+    print("\nmin = si tout passe ; médiane/p90 = avec échecs, simulés avec la formule de difficulté DoFocus.")
+    print("Formule reconstituée à partir de 225 896 clics, pas publiée par Ankama : une approximation.")
 
 
 def cmd_calibrate(a):
@@ -95,6 +100,7 @@ def main(argv=None):
     sp.add_argument("--current", help="valeurs actuelles, ex. 'vitalite=230,force=40'")
     sp.add_argument("--reliquat", type=float, default=0.0)
     sp.add_argument("--runs", type=int, default=300)
+    sp.add_argument("--budget", type=int, default=400, help="clics max par FM simulée")
     sp.add_argument("--forcer-exo", action="store_true", help="planifier les exos/overs lourds même sans reliquat")
     sp.set_defaults(func=cmd_plan)
 

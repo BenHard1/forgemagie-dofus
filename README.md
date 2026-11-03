@@ -56,7 +56,8 @@ python -m fmhelper plan mon_objet.json --current "vitalite=330,force=70" --reliq
 ```
 La commande affiche l'ordre de clics conseillé (en supposant que tout passe), puis la liste de runes à acheter :
 - **min** : le nombre de runes si chaque rune passe ;
-- **médiane / p90** : le nombre de runes simulé sur 300 FM avec échecs (dans 90 % des cas, p90 runes suffisent).
+- **médiane / p90** : le nombre de runes simulé sur 300 FM avec échecs (dans 90 % des cas, p90 runes suffisent) ;
+- la part des FM simulées qui atteignent tes cibles en moins de 400 clics (`--budget` pour changer). Si elle est basse, vise un jet un peu sous le max.
 
 Les exos ou overs lourds (PA, PM, PO, Invo) ne sont planifiés que si le reliquat les couvre. Pour les planifier quand même, ajoute `--forcer-exo`.
 
@@ -79,7 +80,7 @@ python -m fmhelper live mon_objet.json --reliquat 0
 - Si Tesseract n'est pas trouvé : `--tesseract "C:\Program Files\Tesseract-OCR\tesseract.exe"`.
 
 ## Limites connues
-- **Les chances affichées sont des estimations.** Ankama n'a jamais publié la formule. Le modèle (`fmhelper/probability.py`) suit les règles communautaires (palier 80 %, ×20, plancher 2 %, exo 1 %) et tous ses coefficients sont réglables dans `PARAMS`.
+- **Les chances viennent de la formule de difficulté reconstituée par DoFocus** (225 896 clics analysés, voir `docs/REGLES_FORGEMAGIE.md`). Ankama ne l'a pas publiée : c'est une approximation. Deux points restent incertains, la courbe exacte de la qualité globale de l'objet et la part de SN dans les cas extrêmes. Tous les coefficients sont réglables dans `PARAMS` (`fmhelper/probability.py`).
 - Un SC et un SN absorbé par le reliquat donnent le même résultat à l'écran. L'outil suppose un SN (estimation prudente) : corrige avec les boutons si le jeu affichait un SC.
 - La calibration suppose que les cases Rune / Pa / Ra sont alignées en grille à côté des lignes, comme dans l'interface de FM actuelle. Recalibre si tu changes la taille de la fenêtre.
 - Testé sous Linux avec une fausse fenêtre de FM (OCR + cadre). Sous Windows, le mode plein écran transparent avec cercle vert n'a pas encore été testé en jeu.

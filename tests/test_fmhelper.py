@@ -91,7 +91,7 @@ def test_malus_half_price():
     assert rune_weight_on_line(rune_by_tier("sagesse", "base"), l) == 3
 
 
-def test_choose_tier_biggest_fitting():
+def test_choose_tier_biggest_fitting():  # sans objet : la plus grosse rune qui rentre
     it = item(vitalite=300)
     assert choose_tier(it.line("vitalite")).tier == "ra"
     it.line("vitalite").current = 330
@@ -119,10 +119,59 @@ def test_heavy_exo_needs_reliquat():
     assert rec.chances.sc == 0.01 and rec.chances.sn == 0
 
 
-def test_probability_floor_and_palier():
-    it = item(vitalite=301)
-    low = estimate(it, it.line("vitalite"), rune_by_tier("vitalite", "base"))
-    it.line("vitalite").current = 345
-    high = estimate(it, it.line("vitalite"), rune_by_tier("vitalite", "base"))
-    assert low.sc > high.sc >= 0.02
-    assert abs(low.sc + low.sn + low.ec - 1) < 1e-3
+def one_line(cur, level=200, extra=None):
+    d = {"name": "t", "level": level, "lines": [{"stat": "force", "min": 1, "max": 100, "current": cur}]}
+    if extra:
+        d["lines"] += extra
+    return Item.from_dict(d)
+
+
+def test_formula_easy_click():
+    it = one_line(50)
+    ch = estimate(it, it.line("force"), rune_by_tier("force", "ra"))
+    assert ch.difficulty == 5
+    assert (ch.sc, ch.sn, ch.ec) == (0.475, 0.5, 0.025)
+
+
+def test_formula_palier_80():
+    it = one_line(78)  # 78 + 10 = 88 >= 80 % du max
+    ch = estimate(it, it.line("force"), rune_by_tier("force", "ra"))
+    assert ch.difficulty == 50 and ch.sc == 0.25
+
+
+def test_formula_over_and_floor():
+    it = one_line(95)  # 95 + 10 = 105 : over de 5 points de poids
+    ch = estimate(it, it.line("force"), rune_by_tier("force", "ra"))
+    assert ch.difficulty == 5 + 45 + 65 + 4 * 5
+    assert ch.sc == 0.02  # plancher
+
+
+def test_formula_x14():
+    it = one_line(40)  # 40 / 1 = x40 avec une rune Fo : +12 x 26
+    ch = estimate(it, it.line("force"), rune_by_tier("force", "base"))
+    assert ch.difficulty == 5 + 12 * 26 and ch.sc == 0.02
+    it = one_line(15)  # x15 : +12
+    ch = estimate(it, it.line("force"), rune_by_tier("force", "base"))
+    assert ch.difficulty == 17
+
+
+def test_formula_low_level():
+    it = one_line(50, level=150)
+    ch = estimate(it, it.line("force"), rune_by_tier("force", "ra"))
+    assert ch.difficulty == -15 and ch.sc == 0.575 and abs(ch.sc + ch.sn + ch.ec - 1) < 1e-9
+
+
+def test_formula_quality_and_exo_pa():
+    perfect = [{"stat": "vitalite", "min": 100, "max": 200, "current": 200}]
+    it = one_line(50, extra=perfect)
+    assert estimate(it, it.line("force"), rune_by_tier("force", "ra")).difficulty == 65
+    it = one_line(50, extra=[{"stat": "vitalite", "min": 100, "max": 200, "current": 100}])
+    assert estimate(it, it.line("force"), rune_by_tier("force", "ra")).difficulty == 5
+    it = one_line(50, extra=[{"stat": "vitalite", "min": 100, "max": 200, "current": 100}])
+    it.lines.append(Line("pa", 0, 0, current=1, exo=True))
+    assert estimate(it, it.line("force"), rune_by_tier("force", "ra")).difficulty == 65
+
+
+def test_choose_tier_prefers_bigger_rune_past_x14():
+    it = one_line(40)
+    assert choose_tier(it.line("force"), it).tier == "ra"

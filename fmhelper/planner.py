@@ -1,14 +1,15 @@
 """Choix de la prochaine rune, plan de clics et liste d'achats.
 
-Stratégie (consensus des guides, voir docs/REGLES_FORGEMAGIE.md) :
-1. Remonter d'abord les lignes légères et les malus (malus = moitié prix).
-2. Monter toutes les lignes progressivement plutôt qu'une seule à 100 %.
-3. Choisir le rang de rune (base / Pa / Ra) selon l'écart restant et la règle
-   du x20 : la plus grosse rune qui ne dépasse pas la cible, sauf si la valeur
-   actuelle dépasse 20 x sa puissance (alors on préfère monter d'un rang).
-4. Garder les lignes lourdes (PA, PM, PO, Invo) et les exos/overs pour la fin,
-   quand le reliquat est le plus grand ; ne tenter un over/exo lourd que si
-   le reliquat couvre le poids de la rune.
+Stratégie (formule DoFocus + guides, voir docs/REGLES_FORGEMAGIE.md) :
+1. Remonter d'abord les malus (moitié prix) et les lignes les moins avancées :
+   monter les lignes ensemble, car la qualité globale de l'objet ajoute
+   jusqu'à +60 de difficulté.
+2. Choisir le rang de rune (base / Pa / Ra) qui donne le meilleur SC parmi
+   ceux qui ne dépassent pas la cible (règle du x14 : au-delà de 14 x la
+   puissance de la rune, +12 de difficulté par cran) ; à SC égal, la plus grosse.
+3. Garder les overs et les exos pour la fin. Un exo PA/PM/PO fait considérer
+   l'objet comme parfait (+60) : on le passe en dernier, et seulement si le
+   reliquat couvre le poids de la rune.
 """
 from __future__ import annotations
 
@@ -39,8 +40,12 @@ class Recommendation:
         return f"{self.rune.name} sur {self.line.info.label} [{self.chances}]{cov} — {self.reason}"
 
 
-def choose_tier(line: Line) -> Optional[Rune]:
-    """Choisit la rune (base/Pa/Ra) à poser sur une ligne pour aller vers sa cible."""
+def choose_tier(line: Line, item: Optional[Item] = None) -> Optional[Rune]:
+    """Choisit la rune (base/Pa/Ra) à poser sur une ligne pour aller vers sa cible.
+
+    Avec l'objet, on prend le rang au meilleur SC (règle du x14) ; sans, la plus
+    grosse rune qui rentre.
+    """
     gap = line.target - line.current
     if gap <= 0:
         return None
@@ -55,10 +60,11 @@ def choose_tier(line: Line) -> Optional[Rune]:
         if line.current + smallest.power <= line.cap():
             return smallest
         return None
-    # La plus grosse rune qui rentre : c'est aussi celle qui respecte le mieux
-    # la règle du x20 (valeur actuelle <= 20 x puissance).
-    best = fitting[-1]
-    return best
+    if item is None or len(fitting) == 1:
+        return fitting[-1]
+    scored = [(estimate(item, line, r).sc, r.power, r) for r in fitting]
+    top = max(sc for sc, _, _ in scored)
+    return max((x for x in scored if x[0] >= top - 0.005), key=lambda x: x[1])[2]
 
 
 def _priority(line: Line, rune: Rune) -> tuple:
@@ -84,7 +90,7 @@ def recommend(session: ForgeSession, force_heavy: bool = False) -> Optional[Reco
     item = session.item
     best = None
     for idx, line in enumerate(item.lines):
-        rune = choose_tier(line)
+        rune = choose_tier(line, item)
         if rune is None:
             continue
         heavy_risky = rune.weight >= HEAVY_WEIGHT and (line.exo or line.current + rune.power > max(line.max, 0))
@@ -92,10 +98,6 @@ def recommend(session: ForgeSession, force_heavy: bool = False) -> Optional[Reco
         if heavy_risky and not covered and not force_heavy:
             continue
         key = _priority(line, rune)
-        if heavy_risky and covered:
-            # Reliquat suffisant : on tente l'exo/over lourd tout de suite, avant que
-            # les SN des autres runes n'entament le reliquat.
-            key = (-1,) + key[1:]
         if best is None or key < best[0]:
             best = (key, idx, line, rune, covered, heavy_risky)
     if best is None:
@@ -103,7 +105,7 @@ def recommend(session: ForgeSession, force_heavy: bool = False) -> Optional[Reco
     _, idx, line, rune, covered, heavy_risky = best
     ch = estimate(item, line, rune)
     if line.exo:
-        reason = "exo : ligne absente du jet, à tenter en dernier"
+        reason = "exo : ligne absente du jet, à tenter en dernier (un exo PA/PM/PO rend l'objet « parfait », +60 de difficulté)"
     elif line.current + rune.power > max(line.max, 0):
         reason = "over : au-delà du jet max"
     elif line.is_malus:
@@ -119,7 +121,7 @@ def pending_heavy(session: ForgeSession) -> List[Line]:
     """Lignes over/exo lourdes en attente faute de reliquat suffisant."""
     out = []
     for line in session.item.lines:
-        rune = choose_tier(line)
+        rune = choose_tier(line, session.item)
         if rune is None:
             continue
         heavy = rune.weight >= HEAVY_WEIGHT and (line.exo or line.current + rune.power > max(line.max, 0))
@@ -149,6 +151,9 @@ def _apply_loss(session: ForgeSession, rune: Rune, protect: Line, rng: random.Ra
     """Applique une perte de poids `rune.weight` (modèle communautaire).
 
     Ordre : reliquat, puis overs/exos, puis lignes de poids proche de la rune.
+    Une ligne naturelle lourde (PA, PM, PO) saute avec une probabilité qui croît
+    avec le poids de la rune : 0,5 % avec une rune de poids 1, 4 % avec une
+    rune de poids 20 (vidéo DoFocus, règle des lignes impactées).
     """
     need = rune.weight
     if session.reliquat > 0:
@@ -158,11 +163,15 @@ def _apply_loss(session: ForgeSession, rune: Rune, protect: Line, rng: random.Ra
     if need <= 1e-9:
         return
     item = session.item
-    cands = [l for l in item.lines if l is not protect and l.current > l.min and l.current > 0]
+    cands = [l for l in item.lines if l is not protect and l.current > 0]
     if not cands:
         return
     overs = [l for l in cands if l.exo or l.current > l.max]
-    pool = overs or cands
+    heavy = [l for l in cands if l not in overs and l.wpp >= HEAVY_WEIGHT]
+    light = [l for l in cands if l not in overs and l.wpp < HEAVY_WEIGHT]
+    if not overs and heavy and (not light or rng.random() < heavy_hit_chance(rune.weight)):
+        overs = heavy
+    pool = overs or light or cands
     # Les lignes dont le poids par rune de base est proche de la rune sont visées en priorité
     pool.sort(key=lambda l: (abs(l.wpp - rune.weight), rng.random()))
     target = pool[0]
@@ -174,10 +183,21 @@ def _apply_loss(session: ForgeSession, rune: Rune, protect: Line, rng: random.Ra
         session.reliquat += lost_w - need
 
 
-def simulate(item: Item, reliquat: float = 0.0, runs: int = 300, seed: int = 1, max_clicks: int = 2000,
+def heavy_hit_chance(rune_weight: float) -> float:
+    """Probabilité qu'un SN/EC fasse sauter une ligne naturelle lourde (PA...)."""
+    return max(0.005, min(0.5, 0.005 + (0.04 - 0.005) * (rune_weight - 1) / 19))
+
+
+def simulate(item: Item, reliquat: float = 0.0, runs: int = 300, seed: int = 1, max_clicks: int = 400,
              force_heavy: bool = False) -> Dict:
+    """Simule `runs` FM complètes avec la formule de difficulté.
+
+    Chaque FM s'arrête quand les cibles sont atteintes ou après `max_clicks`
+    clics (budget). La clé "__reussite__" donne la part des FM terminées.
+    """
     rng = random.Random(seed)
     totals: List[Counter] = []
+    done = 0
     for _ in range(runs):
         s = ForgeSession(copy.deepcopy(item), reliquat)
         used: Counter = Counter()
@@ -199,6 +219,10 @@ def simulate(item: Item, reliquat: float = 0.0, runs: int = 300, seed: int = 1, 
             # un exo lourd raté : on abandonne après 150 essais (budget)
             if line.exo and used[rune.name] > 150 and line.current < line.target:
                 line.target = line.current
+        else:
+            totals.append(used)
+            continue
+        done += 1
         totals.append(used)
     names = sorted({n for c in totals for n in c})
     summary = {}
@@ -208,6 +232,7 @@ def simulate(item: Item, reliquat: float = 0.0, runs: int = 300, seed: int = 1, 
             "mediane": vals[len(vals) // 2],
             "p90": vals[int(len(vals) * 0.9) - 1 if len(vals) > 1 else 0],
         }
+    summary["__reussite__"] = done / runs if runs else 0.0
     return summary
 
 
@@ -219,12 +244,24 @@ class ShoppingLine:
     p90: int
 
 
-def shopping_list(item: Item, reliquat: float = 0.0, runs: int = 300, force_heavy: bool = False) -> List[ShoppingLine]:
+@dataclass
+class ShoppingReport:
+    lines: List[ShoppingLine]
+    success_rate: float  # part des FM simulées terminées dans le budget
+    budget: int
+
+    def __iter__(self):
+        return iter(self.lines)
+
+
+def shopping_list(item: Item, reliquat: float = 0.0, runs: int = 300, force_heavy: bool = False,
+                  budget: int = 400) -> ShoppingReport:
     plan = click_plan(item, reliquat, force_heavy=force_heavy)
     minimum = Counter(r.rune.name for r in plan)
-    sim = simulate(item, reliquat, runs=runs, force_heavy=force_heavy)
+    sim = simulate(item, reliquat, runs=runs, force_heavy=force_heavy, max_clicks=budget)
+    rate = sim.pop("__reussite__")
     out = []
     for name in sorted(set(minimum) | set(sim)):
         out.append(ShoppingLine(name, minimum.get(name, 0), sim.get(name, {}).get("mediane", 0), sim.get(name, {}).get("p90", 0)))
     out.sort(key=lambda s: -s.median)
-    return out
+    return ShoppingReport(out, rate, budget)

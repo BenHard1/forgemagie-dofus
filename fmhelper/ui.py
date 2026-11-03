@@ -289,8 +289,10 @@ class LiveApp:
         txt = tk.Text(top, width=60, height=20, font=("Consolas", 10))
         txt.pack()
         txt.insert("end", f"{'Rune':28} {'min':>5} {'médiane':>8} {'p90':>6}\n")
-        for s in shopping_list(self.session.item, self.session.reliquat, runs=150):
+        rep = shopping_list(self.session.item, self.session.reliquat, runs=150)
+        for s in rep:
             txt.insert("end", f"{s.rune:28} {s.minimum:>5} {s.median:>8} {s.p90:>6}\n")
+        txt.insert("end", f"\nFM terminée dans {rep.success_rate:.0%} des simulations (budget {rep.budget} clics).\n")
 
     # -- boucle --
     def tick(self):

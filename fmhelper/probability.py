@@ -1,23 +1,27 @@
-"""Estimation des chances SC / SN / EC d'une rune.
+"""Chances SC / SN / EC d'une rune : formule de la « difficulté ».
 
-ATTENTION : Ankama n'a jamais publié la formule officielle. Ce module implémente
-un modèle *estimatif* construit à partir des règles communautaires listées dans
-docs/REGLES_FORGEMAGIE.md (vidéo DoFocus, Fashionista, Gamosaurus, Huzounet) :
+Formule reconstituée par DoFocus (vidéo « J'ai CRACKÉ le secret de la
+forgemagie DOFUS », 225 896 clics analysés). Ankama ne l'a pas publiée : c'est
+une approximation très proche des données, pas le code du jeu.
 
-- palier des 80 % : tant que la ligne reste sous 80 % de son max après la rune,
-  les chances sont bonnes ; au-delà elles baissent jusqu'au max, puis
-  fortement en over ;
-- règle du x20 : une rune passe bien tant que la valeur de la ligne reste
-  sous ~20 fois la puissance de la rune (+1 jusqu'à 20, +3 jusqu'à 60, +10
-  jusqu'à 200) ;
-- plancher de 2 % : le SC ne descend jamais sous 2 % pour une rune normale ;
-- exo lourd (PA, PM, PO, Invo… poids >= 30 sur une ligne absente) : SC 1 %,
-  pas de SN ;
-- plus l'objet est proche de son poids max, plus c'est dur ;
-- objets sous le niveau 170 : chances plus favorables (facteur réglable).
+    difficulté = 5
+               + 45                      si la ligne dépasse 80 % de son max
+               + 65 + 4 x poids d'over   si la ligne passe au-dessus de son max
+               + 12 x (multiplicateur - 14)  si la ligne vaut plus de 14 x la puissance de la rune
+               - 20                      si l'objet est sous le niveau 170
+               + 0 à 60                  selon la qualité globale de l'objet
+                                         (60 d'office avec un exo PA/PM/PO)
 
-Tous les coefficients sont dans PARAMS pour pouvoir les recalibrer à partir de
-ton propre historique (fichier CSV écrit par l'outil en mode live).
+    SC = (100 - difficulté) / 2, jamais sous 2 % (sauf exo PA/PM/PO)
+    SN = 50 % (dans la plupart des cas)
+    EC = le reste
+
+Points encore incertains, réglables dans PARAMS :
+- la forme exacte de la courbe de qualité globale (la vidéo dit seulement
+  « presque rien pour un objet moyen, jusqu'à +60 presque parfait ») ;
+- si le palier des 80 % et le x14 se mesurent avant ou après la rune ;
+- la part exacte de SN dans les cas extrêmes ;
+- les chances d'un exo PA/PM/PO (≈ 1 % selon la communauté).
 """
 from __future__ import annotations
 
@@ -27,19 +31,25 @@ from typing import Dict
 from .model import Item, Line
 from .runes import Rune
 
+HEAVY_EXO_STATS = ("pa", "pm", "po")
+
 PARAMS: Dict[str, float] = {
-    "base_sc": 0.66,  # SC max théorique sur une ligne basse
-    "palier": 0.80,  # palier des 80 %
-    "sc_at_max": 0.30,  # SC quand la rune amène la ligne pile au max
-    "sc_over": 0.10,  # SC de départ pour un over (décroît avec le poids d'over)
-    "x20_penalty": 0.55,  # multiplicateur si la valeur dépasse 20 x puissance
-    "item_weight_factor": 0.25,  # pénalité max liée au remplissage de l'objet
-    "low_level_bonus": 1.15,  # objets < 170
+    "base": 5,
+    "palier": 0.80,
+    "palier_cost": 45,
+    "over_cost": 65,
+    "over_per_weight": 4,
+    "mult_start": 14,
+    "mult_cost": 12,
     "low_level_threshold": 170,
-    "floor": 0.02,  # plancher de 2 %
-    "exo_heavy_sc": 0.01,  # exo PA/PM/PO/Invo
-    "exo_heavy_weight": 30,  # poids à partir duquel un exo est « lourd »
-    "sn_share": 0.65,  # part de SN dans (1 - SC)
+    "low_level_bonus": 20,
+    "quality_max": 60,
+    "quality_exponent": 3,  # courbe de qualité : 60 x q^3 (incertain)
+    "floor": 0.02,
+    "sn": 0.50,
+    "exo_heavy_sc": 0.01,
+    "exo_heavy_weight": 30,
+    "palier_after_rune": 1,  # 1 : palier/over mesurés sur la valeur après la rune
 }
 
 
@@ -48,6 +58,7 @@ class Chances:
     sc: float
     sn: float
     ec: float
+    difficulty: float = 0.0
 
     @property
     def passes(self) -> float:
@@ -58,45 +69,54 @@ class Chances:
         return f"SC {self.sc:.0%} · SN {self.sn:.0%} · EC {self.ec:.0%}"
 
 
-def _clamp(x, lo, hi):
-    return max(lo, min(hi, x))
+def item_quality(item: Item, exclude: Line = None) -> float:
+    """Qualité globale de 0 (lignes au min) à 1 (jet parfait), pondérée par le poids.
+
+    Un exo PA/PM/PO présent sur l'objet le rend « parfait » (règle de l'exo PA).
+    """
+    for l in item.lines:
+        if l.exo and l.stat in HEAVY_EXO_STATS and l.current > 0:
+            return 1.0
+    num = den = 0.0
+    for l in item.lines:
+        if l is exclude or l.exo or l.max <= 0:
+            continue
+        w = max(l.max, 1) * l.wpp
+        span = l.max - l.min
+        q = 1.0 if span <= 0 else (l.current - l.min) / span
+        num += w * max(0.0, min(1.0, q))
+        den += w
+    return num / den if den else 0.0
+
+
+def difficulty(item: Item, line: Line, rune: Rune, p: Dict[str, float] = PARAMS) -> float:
+    value = line.current + rune.power if p["palier_after_rune"] else line.current
+    d = p["base"]
+    if not line.is_malus and line.max > 0:
+        if value >= p["palier"] * line.max:
+            d += p["palier_cost"]
+    over_w = line.over_points(value) * line.wpp
+    if over_w > 0:
+        d += p["over_cost"] + p["over_per_weight"] * over_w
+    if rune.power > 0 and line.current > 0:
+        mult = int(line.current // rune.power)
+        if mult > p["mult_start"]:
+            d += p["mult_cost"] * (mult - p["mult_start"])
+    if item.level < p["low_level_threshold"]:
+        d -= p["low_level_bonus"]
+    d += p["quality_max"] * item_quality(item, exclude=line) ** p["quality_exponent"]
+    return d
 
 
 def estimate(item: Item, line: Line, rune: Rune, params: Dict[str, float] = PARAMS) -> Chances:
     p = params
-    after = line.current + rune.power
-    # Exo lourd : ligne absente du jet et rune de poids >= 30
-    if (line.exo or line.max <= 0 and not line.is_malus) and line.current <= 0 and rune.weight >= p["exo_heavy_weight"]:
+    absent = line.exo or (line.max <= 0 and not line.is_malus)
+    if absent and line.current <= 0 and (rune.stat in HEAVY_EXO_STATS or rune.weight >= p["exo_heavy_weight"]):
         sc = p["exo_heavy_sc"]
-        return Chances(sc, 0.0, 1 - sc)
-
-    ref_max = max(line.max, 1)
-    if line.is_malus:
-        ratio = 0.0  # remonter un malus est facile
-    else:
-        ratio = after / ref_max
-
-    if ratio <= p["palier"]:
-        sc = p["base_sc"]
-    elif ratio <= 1.0:
-        t = (ratio - p["palier"]) / (1 - p["palier"])
-        sc = p["base_sc"] + t * (p["sc_at_max"] - p["base_sc"])
-    else:
-        over_w = line.over_points(after) * line.wpp
-        sc = p["sc_over"] * (1 - over_w / 101.0)
-
-    if line.current > 20 * rune.power:
-        sc *= p["x20_penalty"]
-
-    mw = item.max_weight()
-    if mw > 0:
-        fill = _clamp(item.positive_weight() / mw, 0, 1.3)
-        sc *= 1 - p["item_weight_factor"] * fill / 1.3
-
-    if item.level < p["low_level_threshold"]:
-        sc *= p["low_level_bonus"]
-
-    sc = _clamp(sc, p["floor"], 0.95)
-    sn = (1 - sc) * p["sn_share"]
-    ec = 1 - sc - sn
-    return Chances(round(sc, 4), round(sn, 4), round(ec, 4))
+        return Chances(sc, 0.0, round(1 - sc, 4), difficulty=float("inf"))
+    d = difficulty(item, line, rune, p)
+    sc = (100 - d) / 2 / 100
+    sc = max(p["floor"], min(1.0, sc))
+    sn = min(p["sn"], 1 - sc)
+    ec = max(0.0, 1 - sc - sn)
+    return Chances(round(sc, 4), round(sn, 4), round(ec, 4), difficulty=d)
