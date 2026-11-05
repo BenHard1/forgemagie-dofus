@@ -62,6 +62,9 @@ class Launcher:
         ttk.Label(exo, text="   Reliquat de départ :").pack(side="left")
         self.v_rel = tk.StringVar(value="0")
         ttk.Entry(exo, textvariable=self.v_rel, width=6).pack(side="left")
+        ttk.Label(exo, text="   Clics max simulés :").pack(side="left")
+        self.v_budget = tk.StringVar(value="400")
+        ttk.Spinbox(exo, textvariable=self.v_budget, from_=100, to=20000, increment=100, width=7).pack(side="left")
 
         act = ttk.Frame(self.root, padding=8)
         act.pack(fill="x")
@@ -123,6 +126,9 @@ class Launcher:
     def set_item(self, item: Item):
         self.item = item
         self.v_title.set(f"{item.name} (niv. {item.level}) — renseigne le jet actuel et le jet que tu juges acceptable")
+        from .planner import default_budget
+
+        self.v_budget.set(str(default_budget(item)))
         for w in self.grid.winfo_children():
             w.destroy()
         ttk, tk = self.ttk, self.tk
@@ -168,6 +174,12 @@ class Launcher:
             self.v_status.set("Les valeurs doivent être des nombres entiers.")
             return False
 
+    def budget(self) -> int:
+        try:
+            return max(50, int(float(self.v_budget.get())))
+        except ValueError:
+            return 400
+
     def reliquat(self) -> float:
         try:
             return float(self.v_rel.get().replace(",", "."))
@@ -178,13 +190,13 @@ class Launcher:
     def compute(self):
         if not self.sync():
             return
-        item, rel = self.item, self.reliquat()
+        item, rel, budget = self.item, self.reliquat(), self.budget()
         self.out.delete("1.0", "end")
-        self.out.insert("end", "Calcul en cours (simulation de 200 FM)…\n")
+        self.out.insert("end", f"Calcul en cours (simulation de FM, {budget} clics max chacune)…\n")
 
         def work():
             plan = click_plan(item, rel)
-            rep = shopping_list(item, rel, runs=200)
+            rep = shopping_list(item, rel, runs=200 if budget <= 1000 else 100, budget=budget)
             self.root.after(0, lambda: self._show_compute(plan, rep))
 
         threading.Thread(target=work, daemon=True).start()

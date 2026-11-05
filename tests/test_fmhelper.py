@@ -216,3 +216,16 @@ def test_parse_real_fm_table_lines():
     d = values_dict(parse_lines(txt))
     assert d == {"vitalite": 131, "puissance": 30, "sagesse": 21, "do_neutre": 8, "do_feu": 7, "po": 1, "tacle": -10}
     assert parse_reliquat(" 1\n") == 1.0 and parse_reliquat("12,5") == 12.5 and parse_reliquat("—") is None
+
+
+def test_default_budget_by_item():
+    from fmhelper.planner import default_budget
+
+    small = Item.from_dict({"name": "t", "level": 20, "lines": [{"stat": "force", "min": 1, "max": 20}]})
+    assert default_budget(small) == 400
+    high = Item.from_dict({"name": "t", "level": 200, "lines": [{"stat": "force", "min": 1, "max": 80}]})
+    assert default_budget(high) == 1500
+    heavy = Item.from_dict({"name": "t", "level": 200, "lines": [{"stat": "force", "min": 1, "max": 80},
+                                                               {"stat": "pa", "min": 1, "max": 1},
+                                                               {"stat": "sagesse", "min": 31, "max": 80}]})
+    assert default_budget(heavy) == 2500

@@ -82,7 +82,7 @@ python -m fmhelper plan mon_objet.json --current "vitalite=330,force=70" --reliq
 La commande affiche l'ordre de clics conseillé (en supposant que tout passe), puis la liste de runes à acheter :
 - **min** : le nombre de runes si chaque rune passe ;
 - **médiane / p90** : le nombre de runes simulé sur 300 FM avec échecs (dans 90 % des cas, p90 runes suffisent) ;
-- la part des FM simulées qui atteignent tes cibles en moins de 400 clics (`--budget` pour changer). Si elle est basse, vise un jet un peu sous le max.
+- la part des FM simulées qui atteignent tes cibles dans le budget de clics. Le budget s'adapte à l'objet : 400 clics sous le niveau 170, 1 500 au niveau 170 et plus, 2 500 pour un objet très lourd (avec PA, beaucoup de lignes…). Tu peux le changer dans le champ **Clics max simulés** de la fenêtre, ou avec `--budget` en ligne de commande. Si la part est basse, vise un jet un peu sous le max.
 
 Les exos ou overs lourds (PA, PM, PO, Invo) ne sont planifiés que si le reliquat les couvre. Pour les planifier quand même, ajoute `--forcer-exo`.
 

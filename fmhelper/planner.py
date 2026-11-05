@@ -267,3 +267,17 @@ def shopping_list(item: Item, reliquat: float = 0.0, runs: int = 300, force_heav
         out.append(ShoppingLine(name, minimum.get(name, 0), sim.get(name, {}).get("mediane", 0), sim.get(name, {}).get("p90", 0)))
     out.sort(key=lambda s: -s.median)
     return ShoppingReport(out, rate, budget)
+
+
+def default_budget(item: Item) -> int:
+    """Budget de clics par défaut d'une FM simulée, selon l'objet.
+
+    400 clics suffisent pour un petit objet ; un objet de niveau 170+ (plus
+    dur d'après la formule) ou très lourd en demande beaucoup plus.
+    """
+    budget = 400
+    if item.level >= 170:
+        budget = 1500
+    if item.max_weight() > 400:
+        budget = max(budget, 2500)
+    return budget
