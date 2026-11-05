@@ -369,7 +369,7 @@ class Overlay:
 # ---------------------------------------------------------------------------
 
 class LiveApp:
-    def __init__(self, item: Item, cal: Calibration, reliquat: float = 0.0, interval_ms: int = 400,
+    def __init__(self, item: Item, cal: Calibration, reliquat: float = 0.0, interval_ms: int = 100,
                  log_path: str = "historique_fm.csv", tesseract_cmd: Optional[str] = None, lang: str = "fra"):
         _dpi_aware()
         import tkinter as tk
@@ -390,6 +390,12 @@ class LiveApp:
         self.go_back = False
         self.synced = False
         self.zero_reads = 0
+        self.prev_sig = None
+        self.done_sig = None
+        self.read_info = "En attente de la première lecture"
+        from concurrent.futures import ThreadPoolExecutor
+
+        self.pool = ThreadPoolExecutor(max_workers=1)
 
         self.root = tk.Tk()
         self.root.title("Aide FM — lecture seule")
@@ -493,11 +499,12 @@ class LiveApp:
         finally:
             self.root.after(self.interval, self.tick)
 
-    def _read(self) -> Optional[Dict[str, int]]:
+    def _read(self, img=None) -> Optional[Dict[str, int]]:
         from . import ocr
 
         try:
-            vals = ocr.read_region(self.cal.stats_bbox, lang=self.lang, tesseract_cmd=self.tess)
+            vals = ocr.ocr_stats(img, lang=self.lang, tesseract_cmd=self.tess) if img is not None else \
+                ocr.read_region(self.cal.stats_bbox, lang=self.lang, tesseract_cmd=self.tess)
         except Exception as e:  # OCR indisponible : on continue sans planter
             msg = str(e)
             if "traineddata" in msg or "Failed loading language" in msg:
@@ -515,7 +522,8 @@ class LiveApp:
             pass
         # On ne garde que les lignes de l'objet (le bruit d'OCR ne crée pas de fausses lignes)
         known = {k: v for k, v in vals.items() if self.session.item.line(k)}
-        self.v_read.set(f"Lecture {time.strftime('%H:%M:%S')} : {len(known)}/{len(self.session.item.lines)} lignes reconnues")
+        self.read_info = f"Lecture {time.strftime('%H:%M:%S')} : {len(known)}/{len(self.session.item.lines)} lignes reconnues"
+        self.v_read.set(self.read_info)
         if not known:
             self.zero_reads += 1
             if self.zero_reads >= 3:
@@ -537,23 +545,44 @@ class LiveApp:
             return None
 
     def _read_and_update(self):
-        vals = self._read()
-        if not vals:
+        """Capture (rapide) à chaque tick ; OCR seulement quand l'image a changé
+        puis est restée stable un tick (fin de l'animation du jeu)."""
+        from . import ocr
+
+        img = ocr.grab(self.cal.stats_bbox)
+        sig = ocr.image_signature(img)
+        if sig == self.done_sig:
+            # rien de neuf à l'écran : on montre juste que la surveillance tourne
+            self.v_read.set(f"{self.read_info} · surveillance {time.strftime('%H:%M:%S')}")
             return
-        stable = vals == self.last_read
+        if sig != self.prev_sig:
+            self.prev_sig = sig  # l'écran bouge encore : on attend un tick
+            return
+        # Image stable et nouvelle : OCR des stats et du reliquat en parallèle
+        rel_future = None
+        if self.cal.reliquat_bbox:
+            rel_img = ocr.grab(self.cal.reliquat_bbox)
+            rel_future = self.pool.submit(ocr.ocr_reliquat, rel_img, self.tess)
+        vals = self._read(img)
+        game_rel = None
+        if rel_future is not None:
+            try:
+                game_rel = rel_future.result(timeout=5)
+            except Exception:
+                game_rel = None
+        self.done_sig = sig
+        if not vals or len(vals) < max(1, len(self.session.item.lines) // 2):
+            return
         self.last_read = vals
-        if not stable or len(vals) < max(1, len(self.session.item.lines) // 2):
-            return
         self.row_order = [k for k in (self.ocr_order() or vals.keys())]
         if not self.synced:
-            self.resync(vals)
+            self.resync(vals, game_rel)
             return
         rune = self.rec.rune if self.rec else None
         before = self.session.item.values()
         obs = self.session.observe(vals, rune=rune)
         if obs is None:
             return
-        game_rel = self._read_game_reliquat()
         if game_rel is not None:  # le jeu affiche le vrai reliquat : il remplace l'estimation
             obs.reliquat_after = game_rel
             self.session.reliquat = game_rel
@@ -576,18 +605,19 @@ class LiveApp:
                 order.append(k)
         return order
 
-    def resync(self, vals: Optional[Dict[str, int]] = None):
+    def resync(self, vals: Optional[Dict[str, int]] = None, game_rel: Optional[float] = None):
         """Prend les valeurs lues comme état de départ, sans compter de coup."""
         if vals is None:
             vals = self._read() or {}
+            game_rel = self._read_game_reliquat()
+            self.done_sig = None
         for k, v in vals.items():
             l = self.session.item.line(k)
             if l is not None:
                 l.current = v
         self.synced = bool(vals)
-        rel = self._read_game_reliquat()
-        if rel is not None:
-            self.session.reliquat = rel
+        if game_rel is not None:
+            self.session.reliquat = game_rel
         if vals:
             self.last_read = vals
             self.v_last.set("Jet synchronisé avec l'écran. Tu peux cliquer sur la rune entourée.")

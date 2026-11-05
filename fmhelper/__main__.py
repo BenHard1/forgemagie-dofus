@@ -153,7 +153,7 @@ def main(argv=None):
     sl.add_argument("item")
     sl.add_argument("--calibration", default="calibration.json")
     sl.add_argument("--reliquat", type=float, default=0.0)
-    sl.add_argument("--interval", type=int, default=400, help="ms entre deux lectures")
+    sl.add_argument("--interval", type=int, default=100, help="ms entre deux captures (l'OCR ne tourne que si l'écran change)")
     sl.add_argument("--tesseract", help="chemin de tesseract.exe si non trouvé")
     sl.add_argument("--lang", default="fra")
     sl.set_defaults(func=cmd_live)

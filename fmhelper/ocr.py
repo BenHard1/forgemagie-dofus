@@ -208,21 +208,50 @@ def resolve_lang(lang: str = "fra") -> Tuple[str, str]:
     return res
 
 
-def read_region(bbox, lang: str = "fra", tesseract_cmd: Optional[str] = None) -> Dict[str, int]:
+def _setup_tesseract(tesseract_cmd: Optional[str] = None) -> None:
     import pytesseract
 
     if tesseract_cmd:
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-    else:
+    elif not getattr(_setup_tesseract, "done", False):
         found = find_tesseract()
         if found:
             pytesseract.pytesseract.tesseract_cmd = found
+    _setup_tesseract.done = True
+
+
+def ocr_stats(img, lang: str = "fra", tesseract_cmd: Optional[str] = None) -> Dict[str, int]:
+    """OCR d'une image (déjà capturée) de la zone des stats."""
+    import pytesseract
+
+    _setup_tesseract(tesseract_cmd)
     use_lang, extra = resolve_lang(lang)
-    img = preprocess(grab(bbox))
-    text = pytesseract.image_to_string(img, lang=use_lang, config=f"--psm 6 {extra}".strip())
+    text = pytesseract.image_to_string(preprocess(img), lang=use_lang, config=f"--psm 6 {extra}".strip())
     global LAST_TEXT
     LAST_TEXT = text
     return values_dict(parse_lines(text))
+
+
+def ocr_reliquat(img, tesseract_cmd: Optional[str] = None) -> Optional[float]:
+    """OCR d'une image de la zone « reliquat : N »."""
+    import pytesseract
+
+    _setup_tesseract(tesseract_cmd)
+    text = pytesseract.image_to_string(preprocess(img, scale=3),
+                                       config="--psm 7 -c tessedit_char_whitelist=0123456789.,:reliquatRELIQUAT")
+    return parse_reliquat(text.split(":")[-1])
+
+
+def image_signature(img) -> str:
+    """Empreinte rapide d'une capture, pour ne relancer l'OCR que si l'écran a changé."""
+    import hashlib
+
+    small = img.convert("L").resize((max(1, img.width // 2), max(1, img.height // 2)))
+    return hashlib.md5(small.tobytes()).hexdigest()
+
+
+def read_region(bbox, lang: str = "fra", tesseract_cmd: Optional[str] = None) -> Dict[str, int]:
+    return ocr_stats(grab(bbox), lang, tesseract_cmd)
 
 
 LAST_TEXT = ""  # dernier texte brut lu (diagnostic)
@@ -230,10 +259,4 @@ LAST_TEXT = ""  # dernier texte brut lu (diagnostic)
 
 def read_reliquat(bbox, tesseract_cmd: Optional[str] = None) -> Optional[float]:
     """Lit le reliquat affiché par le jeu (« reliquat : N »)."""
-    import pytesseract
-
-    if tesseract_cmd:
-        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-    img = preprocess(grab(bbox), scale=3)
-    text = pytesseract.image_to_string(img, config="--psm 7 -c tessedit_char_whitelist=0123456789.,:reliquatRELIQUAT")
-    return parse_reliquat(text.split(":")[-1])
+    return ocr_reliquat(grab(bbox), tesseract_cmd)
